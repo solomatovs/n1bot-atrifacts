@@ -32,11 +32,6 @@ COPY boba/src/adapters/src/boba/   /app/src/adapters/src/boba/
 COPY boba/src/infra/src/boba/      /app/src/infra/src/boba/
 COPY boba/src/chainlit/src/boba/   /app/src/chainlit/src/boba/
 
-# Статический chainlit UI-конфиг (brand name, file upload limits, telemetry off).
-# Не tunable per-deployment — бейкаем в образ. Chainlit регенерирует
-# translations/ внутри этой папки на старте.
-COPY boba/src/chainlit/.chainlit/  /app/chainlit/.chainlit/
-
 ENV PYTHONPATH="/app/src/domain/src:/app/src/app/src:/app/src/adapters/src:/app/src/infra/src:/app/src/chainlit/src"
 
 WORKDIR /app/chainlit
