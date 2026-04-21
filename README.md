@@ -1,6 +1,6 @@
 # boba-artifacts
 
-Сборочный проект для [boba](https://github.com/solomatovs/boba): Astra Linux CE 2.12 +
+Сборочный проект для [boba]: Astra Linux CE 2.12 +
 glibc 2.28 + Python 3.11. Хранит `Dockerfile`'ы, pre-downloaded `wheels/`, тарболы
 glibc/gcc/python и `docker-compose.yml`.
 
