@@ -1,0 +1,13 @@
+# Локальные (не-коммитабельные) артефакты — шаблоны с суффиксом .example
+secrets/*
+!secrets/*.example
+pip/pip.conf
+apt/sources.list
+config/config.toml
+config/config.debug.toml
+images/
+
+# Runtime-сгенерированное
+.chainlit/
+.files/
+import/
