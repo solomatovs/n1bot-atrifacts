@@ -17,7 +17,7 @@
 # catch-all `location /boba/` — nginx матчит самый длинный префикс.
 location /boba/ws/ {
   resolver 127.0.0.11 valid=5s;
-  set $chainlit http://boba-chainlit:8501;
+  set $chainlit http://127.0.0.1:8501;
   proxy_pass $chainlit;
 
   proxy_http_version 1.1;
@@ -40,7 +40,7 @@ location /boba/ws/ {
 # Всё остальное (HTML/JS, /boba/healthz, /boba/login и пр.).
 location /boba/ {
   resolver 127.0.0.11 valid=5s;
-  set $chainlit http://boba-chainlit:8501;
+  set $chainlit http://127.0.0.1:8501;
   proxy_pass $chainlit;
 
   proxy_http_version 1.1;
