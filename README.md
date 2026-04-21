@@ -19,7 +19,7 @@ boba-artifacts/
 ├── local/                   # все локальные оверрайды (*.example — в git, реальные — не в git):
 │   ├── apt-sources.list  # override apt-репо (пустой = дефолт rootfs)
 │   ├── ca-chain.crt      # корпоративные CA (PEM, пустой = public-only)
-│   ├── env.secrets       # LITELLM_API_KEY, CONFLUENCE_TOKEN, CHAINLIT_AUTH_SECRET
+│   ├── env.secrets       # LITELLM_API_KEY, CHAINLIT_AUTH_SECRET
 │   ├── env.tunables      # LLM_BASE_URL, CHAINLIT_MODELS, CHAINLIT_ROOT_PATH, …
 │   ├── nginx-boba.conf   # reverse-proxy (include в http-server nginx)
 │   └── pip.conf          # /etc/pip.conf внутри рантайма (для отладки)
@@ -147,8 +147,8 @@ docker load --input images/boba-chainlit.tar.gz
 ```bash
 cd boba-artifacts
 # local/env.secrets   — заполните реальными значениями:
-#   LITELLM_API_KEY, CONFLUENCE_TOKEN,
-#   CHAINLIT_AUTH_SECRET (для последнего: openssl rand -hex 32)
+#   LITELLM_API_KEY, CHAINLIT_AUTH_SECRET
+#   (для последнего: openssl rand -hex 32)
 # local/env.tunables  — дефолты deployment-specific:
 #   LLM_BASE_URL=http://litellm:4000, CHAINLIT_ROOT_PATH=/boba,
 #   CHAINLIT_MODELS=… (CSV), и опциональные AGENT_*/LLM_*/LOG_* (см. файл)
