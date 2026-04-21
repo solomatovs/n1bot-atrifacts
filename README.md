@@ -17,14 +17,11 @@ glibc/gcc/python и `docker-compose.yml`.
 ```
 boba-artifacts/
 ├── local/                   # все локальные оверрайды (*.example — в git, реальные — не в git):
-│   ├── apt-sources.list     #   override apt-репо (пустой = дефолт rootfs)
-│   ├── boba-config.toml     #   конфиг приложения (mount → /app/config/config.toml)
-│   ├── ca-chain.crt         #   корпоративные CA (PEM, пустой = public-only)
-│   ├── chainlit-config.toml #   chainlit UI (mount → /app/chainlit/.chainlit/config.toml)
-│   ├── chainlit_auth_secret #   Docker secret
-│   ├── confluence_token     #   Docker secret
-│   ├── litellm_api_key      #   Docker secret
-│   └── pip.conf             #   /etc/pip.conf внутри рантайма (для отладки)
+│   ├── apt-sources.list  # override apt-репо (пустой = дефолт rootfs)
+│   ├── ca-chain.crt      # корпоративные CA (PEM, пустой = public-only)
+│   ├── env.secrets       # LITELLM_API_KEY, CONFLUENCE_TOKEN, CHAINLIT_AUTH_SECRET
+│   ├── env.tunables      # LLM_BASE_URL, CHAINLIT_MODELS, CHAINLIT_ROOT_PATH, …
+│   └── pip.conf          # /etc/pip.conf внутри рантайма (для отладки)
 ├── gcc-src/, glibc-src/,
 │   python-src/              # исходники для Dockerfile.base
 ├── wheels/                  # pre-downloaded .whl (generated командой из Шага 2)
@@ -143,17 +140,17 @@ docker load --input images/boba-chainlit.tar.gz
 
 ## 5. Run
 
-Конфиг и секреты — runtime-зависимости, нужны только на `up`.
-Заполните реальными значениями (см. Шаг 0):
+Секреты и настройки — runtime-зависимости, нужны только на `up`.
+Приложение читает всё из env (приоритет выше любого code-дефолта).
 
 ```bash
 cd boba-artifacts
-# local/boba-config.toml       — параметры приложения (правьте вручную)
-# local/chainlit-config.toml   — UI-настройки chainlit
-# local/litellm_api_key        — LiteLLM API key
-# local/confluence_token       — Confluence API token
-# local/chainlit_auth_secret   — случайная строка, напр.:
-#   openssl rand -hex 32 > local/chainlit_auth_secret
+# local/env.secrets   — заполните реальными значениями:
+#   LITELLM_API_KEY, CONFLUENCE_TOKEN,
+#   CHAINLIT_AUTH_SECRET (для последнего: openssl rand -hex 32)
+# local/env.tunables  — дефолты deployment-specific:
+#   LLM_BASE_URL=http://litellm:4000, CHAINLIT_ROOT_PATH=/boba,
+#   CHAINLIT_MODELS=… (CSV), и опциональные AGENT_*/LLM_*/LOG_* (см. файл)
 docker compose up -d
 ```
 

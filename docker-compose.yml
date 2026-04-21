@@ -1,11 +1,3 @@
-secrets:
-  litellm_api_key:
-    file: local/litellm_api_key
-  confluence_token:
-    file: local/confluence_token
-  chainlit_auth_secret:
-    file: local/chainlit_auth_secret
-
 services:
   chainlit:
     hostname: boba-chainlit
@@ -13,19 +5,12 @@ services:
     build:
       context: ..
       dockerfile: boba-artifacts/Dockerfile
-    environment:
-      BOBA_CONFIG: /app/config/config.toml
-      LITELLM_API_KEY_FILE: /run/secrets/litellm_api_key
-      WORKSPACE_BASE_DIR: /app/workspaces
-      LOG_FILE: /app/logs/chainlit.log
+    env_file:
+      - ./local/env.secrets
+      - ./local/env.tunables
     volumes:
-      - ./local/boba-config.toml:/app/config/config.toml:ro
-      - ./local/chainlit-config.toml:/app/chainlit/.chainlit/config.toml:ro
       - chainlit-workspaces:/app/workspaces
       - chainlit-logs:/app/logs
-    secrets:
-      - litellm_api_key
-      - chainlit_auth_secret
     expose:
       - "8080"
     healthcheck:
