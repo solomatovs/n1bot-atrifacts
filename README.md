@@ -21,6 +21,7 @@ boba-artifacts/
 │   ├── ca-chain.crt      # корпоративные CA (PEM, пустой = public-only)
 │   ├── env.secrets       # LITELLM_API_KEY, CONFLUENCE_TOKEN, CHAINLIT_AUTH_SECRET
 │   ├── env.tunables      # LLM_BASE_URL, CHAINLIT_MODELS, CHAINLIT_ROOT_PATH, …
+│   ├── nginx-boba.conf   # reverse-proxy (include в http-server nginx)
 │   └── pip.conf          # /etc/pip.conf внутри рантайма (для отладки)
 ├── gcc-src/, glibc-src/,
 │   python-src/              # исходники для Dockerfile.base

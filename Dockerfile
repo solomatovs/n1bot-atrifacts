@@ -40,5 +40,5 @@ COPY boba/src/chainlit/.chainlit/  /app/chainlit/.chainlit/
 ENV PYTHONPATH="/app/src/domain/src:/app/src/app/src:/app/src/adapters/src:/app/src/infra/src:/app/src/chainlit/src"
 
 WORKDIR /app/chainlit
-EXPOSE 8080
+EXPOSE 8501
 CMD ["python3", "-m", "boba.chainlit"]

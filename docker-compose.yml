@@ -12,9 +12,11 @@ services:
       - chainlit-workspaces:/app/workspaces
       - chainlit-logs:/app/logs
     expose:
-      - "8080"
+      - "8501"
+    ports:
+      - 127.0.0.1:8501:8501
     healthcheck:
-      test: ["CMD-SHELL", "curl --fail http://localhost:8080/boba/healthz || exit 1"]
+      test: ["CMD-SHELL", "curl --fail http://localhost:8501/boba/healthz || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
