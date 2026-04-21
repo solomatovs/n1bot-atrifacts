@@ -118,7 +118,7 @@ docker compose build
 ```
 
 Ставит зависимости через
-`pip install --no-index --find-links=/tmp/wheels -r /tmp/requirements.txt`
+`pip install --no-index --find-links=../boba-artifacts/wheels -r requirements.txt`
 (внутри билд-контекста `boba/requirements.txt`).
 
 ## 4. Save images (для переноса в закрытый контур)
