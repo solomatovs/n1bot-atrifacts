@@ -1,14 +1,11 @@
-# Локальные (не-коммитабельные) артефакты — шаблоны с суффиксом .example
-secrets/*
-!secrets/*.example
-pip/pip.conf
-apt/sources.list
-certs/ca-chain.crt
-config/config.toml
-config/config.debug.toml
+# Локальные оверрайды: коммитим только *.example, реальные — скрыты.
+local/*
+!local/*.example
+
+# Экспорт образов (большие файлы — не коммитим).
 images/
 
-# Runtime-сгенерированное
+# Runtime-сгенерированное.
 .chainlit/
 .files/
 import/

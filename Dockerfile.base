@@ -1,19 +1,5 @@
-# ============================================================
 # Dockerfile.base — сборка glibc 2.28 + GCC 8 + Python 3.11
-#
-# Тяжёлый шаг (~30 мин). Собирается ОДИН РАЗ и тегируется.
-# Контекст сборки — папка boba-artifacts/ (точка в конце):
-#   cd boba-artifacts && docker build -f Dockerfile.base -t boba-base .
-#
-# Исходники ожидаются в boba-artifacts/glibc-src/, gcc-src/,
-# python-src/ (см. README).
-#
-# Кастомные apt-репозитории — правьте boba-artifacts/apt/sources.list
-# (по умолчанию пустой = источники из astra_linux_ce rootfs).
-# apt настроен доверять любым репо (GPG-ключи не требуются).
-#
-# После этого основной Dockerfile использует boba-base:latest.
-# ============================================================
+
 FROM astra_linux_ce_2.12-rootfs:latest AS builder
 
 ARG GLIBC_VERSION=2.28
@@ -29,14 +15,14 @@ RUN printf '%s\n' \
 
 # Опциональный override sources.list. Если файл пустой (только
 # комментарии) — используются дефолтные источники rootfs.
-COPY apt/sources.list /tmp/sources.list.custom
+COPY local/apt-sources.list /tmp/sources.list.custom
 RUN if grep -qvE '^[[:space:]]*(#|$)' /tmp/sources.list.custom 2>/dev/null; then \
       cp /tmp/sources.list.custom /etc/apt/sources.list; \
     fi && rm /tmp/sources.list.custom
 
 # Опциональная цепочка корпоративных CA. Файл без BEGIN CERTIFICATE
 # = no-op (остаются только public CA из rootfs).
-COPY certs/ca-chain.crt /tmp/ca-chain.crt
+COPY local/ca-chain.crt /tmp/ca-chain.crt
 RUN if grep -qE '^-----BEGIN CERTIFICATE-----' /tmp/ca-chain.crt; then \
       cp /tmp/ca-chain.crt /usr/local/share/ca-certificates/ca-chain.crt && \
       update-ca-certificates; \
@@ -114,13 +100,13 @@ RUN printf '%s\n' \
       > /etc/apt/apt.conf.d/99insecure
 
 # Опциональный override sources.list (см. builder-stage выше).
-COPY apt/sources.list /tmp/sources.list.custom
+COPY local/apt-sources.list /tmp/sources.list.custom
 RUN if grep -qvE '^[[:space:]]*(#|$)' /tmp/sources.list.custom 2>/dev/null; then \
       cp /tmp/sources.list.custom /etc/apt/sources.list; \
     fi && rm /tmp/sources.list.custom
 
 # Опциональная цепочка корпоративных CA (см. builder-stage выше).
-COPY certs/ca-chain.crt /tmp/ca-chain.crt
+COPY local/ca-chain.crt /tmp/ca-chain.crt
 RUN if grep -qE '^-----BEGIN CERTIFICATE-----' /tmp/ca-chain.crt; then \
       cp /tmp/ca-chain.crt /usr/local/share/ca-certificates/ca-chain.crt && \
       update-ca-certificates; \

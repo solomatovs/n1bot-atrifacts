@@ -1,10 +1,10 @@
 secrets:
   litellm_api_key:
-    file: secrets/litellm_api_key
+    file: local/litellm_api_key
   confluence_token:
-    file: secrets/confluence_token
+    file: local/confluence_token
   chainlit_auth_secret:
-    file: secrets/chainlit_auth_secret
+    file: local/chainlit_auth_secret
 
 services:
   chainlit:
@@ -19,8 +19,8 @@ services:
       WORKSPACE_BASE_DIR: /app/workspaces
       LOG_FILE: /app/logs/chainlit.log
     volumes:
-      - ./config:/app/config:ro
-      - ./config/chainlit.config.toml:/app/chainlit/.chainlit/config.toml:ro
+      - ./local/boba-config.toml:/app/config/config.toml:ro
+      - ./local/chainlit-config.toml:/app/chainlit/.chainlit/config.toml:ro
       - chainlit-workspaces:/app/workspaces
       - chainlit-logs:/app/logs
     secrets:
