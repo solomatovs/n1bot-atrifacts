@@ -17,6 +17,7 @@ glibc/gcc/python и `docker-compose.yml`.
 ```
 boba-artifacts/
 ├── apt/sources.list{,.example}   # override apt-репо (пустой = дефолт rootfs)
+├── certs/ca-chain.crt{,.example} # корпоративные CA (PEM, пустой = public-only)
 ├── config/                       # chainlit.config.toml, config.{example.,}toml
 ├── gcc-src/, glibc-src/,
 │   python-src/                   # исходники для Dockerfile.base
@@ -41,6 +42,7 @@ boba-artifacts/
 ```bash
 cd boba-artifacts
 cp -n apt/sources.list.example   apt/sources.list
+cp -n certs/ca-chain.crt.example certs/ca-chain.crt
 cp -n pip/pip.conf.example       pip/pip.conf
 cp -n config/config.example.toml config/config.toml
 for f in secrets/*.example; do cp -n "$f" "${f%.example}"; done
@@ -49,7 +51,9 @@ for f in secrets/*.example; do cp -n "$f" "${f%.example}"; done
 ## 1. Base-образ (разово, ~30 мин)
 
 Использует `apt/sources.list` (закрытый контур — пропишите свои зеркала,
-пустой файл = дефолт rootfs; GPG-ключи не нужны):
+пустой файл = дефолт rootfs; GPG-ключи не нужны) и `certs/ca-chain.crt`
+(PEM-цепочка корпоративных CA; без `BEGIN CERTIFICATE` блоков — no-op,
+доверяем только public CA из rootfs):
 
 ```bash
 cd boba-artifacts
@@ -110,7 +114,7 @@ docker compose build
 ```
 
 Ставит зависимости через
-`pip install --no-index --find-links=/tmp/wheels -r /tmp/requirements.txt`.
+`pip install --no-index --find-links=../boba-artifacts/wheels -r requirements.txt`.
 
 ## 4. Save images (для переноса в закрытый контур)
 

@@ -34,6 +34,14 @@ RUN if grep -qvE '^[[:space:]]*(#|$)' /tmp/sources.list.custom 2>/dev/null; then
       cp /tmp/sources.list.custom /etc/apt/sources.list; \
     fi && rm /tmp/sources.list.custom
 
+# Опциональная цепочка корпоративных CA. Файл без BEGIN CERTIFICATE
+# = no-op (остаются только public CA из rootfs).
+COPY certs/ca-chain.crt /tmp/ca-chain.crt
+RUN if grep -qE '^-----BEGIN CERTIFICATE-----' /tmp/ca-chain.crt; then \
+      cp /tmp/ca-chain.crt /usr/local/share/ca-certificates/ca-chain.crt && \
+      update-ca-certificates; \
+    fi && rm /tmp/ca-chain.crt
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential gawk bison xz-utils \
@@ -111,11 +119,23 @@ RUN if grep -qvE '^[[:space:]]*(#|$)' /tmp/sources.list.custom 2>/dev/null; then
       cp /tmp/sources.list.custom /etc/apt/sources.list; \
     fi && rm /tmp/sources.list.custom
 
+# Опциональная цепочка корпоративных CA (см. builder-stage выше).
+COPY certs/ca-chain.crt /tmp/ca-chain.crt
+RUN if grep -qE '^-----BEGIN CERTIFICATE-----' /tmp/ca-chain.crt; then \
+      cp /tmp/ca-chain.crt /usr/local/share/ca-certificates/ca-chain.crt && \
+      update-ca-certificates; \
+    fi && rm /tmp/ca-chain.crt
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         libssl1.1 libffi6 libsqlite3-0 libbz2-1.0 \
         liblzma5 libreadline7 libncurses5 zlib1g curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Python httpx/requests/openai/pip читают CA bundle через эти env-vars.
+# `ca-certificates.crt` включает и public CA, и кастомные из update-ca-certificates.
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 
 COPY --from=builder /opt/glibc-2.28 /opt/glibc-2.28
 RUN ln -sf /opt/glibc-2.28/lib/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2 && \
