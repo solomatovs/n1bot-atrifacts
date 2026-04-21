@@ -124,3 +124,53 @@ general_settings:
   request_timeout: 600
 
   # Кэширование ответов
+
+
+
+
+# Да, но с уточнением.
+
+# ollama_chat/ — это префикс провайдера в LiteLLM, который направляет запросы на /api/chat Ollama (нативный chat endpoint с поддержкой tool calling), в отличие от ollama/, который идёт на старый /api/generate и tools не умеет.
+
+# Но есть два условия, которые должны выполняться одновременно:
+
+# Транспорт — ollama_chat/ (у тебя так и есть). ✓
+
+# Сама модель должна поддерживать function calling. Это свойство модели, а не litellm. Из твоего списка tools умеют:
+
+# qwen3:* (включая qwen3:0.6b, qwen3:235b)
+# qwen3.5:*
+# llama3.1:8b
+# deepseek-coder-v2:16b — формально да, но на практике нестабильно
+# А вот NuMarkdown-8B-Thinking и qwen2.5-coder:1.5b-base (именно -base, не instruct) — tools не поддерживают.
+
+# То есть ollama_chat — это необходимое, но не достаточное условие. Если модель без tool-поддержки, litellm вернёт ошибку либо (с drop_params: true, как у тебя) просто молча выкинет tools из запроса, и модель ответит обычным текстом.
+
+
+# У LiteLLM есть несколько способов посмотреть routing изнутри, без доступа к конфигу:
+
+# 1. Эндпоинт /model/info — возвращает список моделей вместе с litellm_params (что именно за model, api_base, etc.):
+
+
+# curl http://litellm:4000/model/info -H "Authorization: Bearer $LITELLM_KEY"
+# Это самый прямой способ: увидишь ollama_chat/qwen3:latest, api_base, и весь routing.
+
+# 2. Эндпоинт /v1/models — только имена (OpenAI-совместимый). Для понимания куда идёт — мало, но полезно проверить что модель вообще зарегистрирована.
+
+# 3. Health-check /health — дёргает каждую модель и показывает результат с её параметрами. Полезно чтобы увидеть, какие модели реально живые:
+
+
+# curl http://litellm:4000/health -H "Authorization: Bearer $LITELLM_KEY"
+# 4. UI на /ui — если поднят admin UI, там во вкладке Models всё видно визуально, включая provider и api_base.
+
+# 5. Заголовки ответа — при обычном запросе к /v1/chat/completions litellm добавляет заголовки вида x-litellm-model-api-base, x-litellm-model-id, x-litellm-call-id. Посмотри их через curl -i:
+
+
+# curl -i http://litellm:4000/v1/chat/completions \
+#   -H "Authorization: Bearer $KEY" \
+#   -H "Content-Type: application/json" \
+#   -d '{"model":"qwen3","messages":[{"role":"user","content":"hi"}]}'
+# В заголовках увидишь реальный api_base и тип провайдера — это самый «живой» ответ, потому что отражает именно то, куда ушёл твой конкретный запрос (важно, если настроен router с fallback'ами или несколько deployment'ов под одним model_name).
+
+# Для твоего кейса (понять транспорт — ollama_chat vs ollama vs openai) удобнее всего /model/info — там сразу видно префикс в поле litellm_params.model.
+
