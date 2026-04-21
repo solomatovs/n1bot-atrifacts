@@ -14,9 +14,19 @@ FROM boba-base:latest AS deps
 COPY boba-artifacts/requirements.txt /tmp/requirements.txt
 COPY boba-artifacts/wheels/           /tmp/wheels/
 
+# traceloop-sdk (dep chainlit→literalai) тянет ~38 opentelemetry-instrumentation-*
+# пакетов для трейсинга OpenAI/Anthropic/Langchain/etc. Из них обязательны
+# при импорте только `logging` и `threading` — остальные грузятся лениво
+# в try/except внутри Traceloop.init(). Сносим ~35 неиспользуемых
+# после установки, чтобы не раздувать рантайм-образ.
 RUN pip3 install --no-cache-dir --no-index \
       --find-links=/tmp/wheels \
-      -r /tmp/requirements.txt
+      -r /tmp/requirements.txt \
+ && pip3 list --format=freeze \
+      | grep -E '^opentelemetry-instrumentation-' \
+      | cut -d= -f1 \
+      | grep -vxE 'opentelemetry-instrumentation-logging|opentelemetry-instrumentation-threading|opentelemetry-instrumentation' \
+      | xargs -r pip3 uninstall -y
 
 # ============================================================
 # Runtime
