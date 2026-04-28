@@ -1,6 +1,15 @@
 # Локальные оверрайды: коммитим только *.example, реальные — скрыты.
+# Структура такая же как у boba/.gitignore — поддерживает шаблонные
+# директории (*.example/) и .gitkeep-маркеры пустых поддиректорий.
 local/*
 !local/*.example
+!local/.gitkeep
+!local/README.md
+!local/*/
+local/*/*
+!local/*/.gitkeep
+!local/*.example/
+!local/*.example/**
 
 # Экспорт образов (большие файлы — не коммитим).
 images/

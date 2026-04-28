@@ -1,16 +1,71 @@
+# Один образ ``boba:latest`` со всеми пакетами; что именно запускается —
+# выбирается per-service через ``entrypoint``/``command``.
+#
+#   docker compose build                            # собирает образ
+#   docker compose up -d chainlit                   # запускает веб-UI как daemon
+#   docker compose run --rm vector-index --vector-index-action list
+#   docker compose run --rm -T agent-run --agent-run-model qwen3 \
+#                                        --agent-run-query "Привет"
+#
+# CLI-флаги генерируются из схемы ConfigSection: каждое поле —
+# флаг ``--<section>-<field>``. Помощь: ``run --rm <cli> --help``.
+# Позиционных аргументов нет. Подробности — в README.md, раздел "Ad-hoc CLI".
+#
+# CLI-services помечены ``profiles: ["cli"]`` — они НЕ стартуют с
+# ``docker compose up``, только при явном ``run --rm <name>``.
+#
+# Конфигурация:
+#   local/config.toml — все настройки (log_level, agent loop, chainlit,
+#                       paths, ext.chromadb). Путь к нему — BOBA_CONFIG_PATH.
+#   local/.env        — только URL'ы (LLM) и секреты (api-key, auth-secret).
+#   per-service env   — только то, что отличается между сервисами:
+#                       BOBA_APP_LOG_FILE — каждый сервис в свой лог-файл.
+
+x-boba-base: &boba-base
+  image: boba:latest
+  build:
+    context: ..
+    dockerfile: boba-artifacts/Dockerfile
+  env_file:
+    # URL'ы и секреты. Tunables/paths живут в local/config.toml.
+    # См. local/.env.example.
+    - ./local/.env
+  volumes:
+    # Один bind mount всей папки local/ — общая deployment-песочница
+    # для всех сервисов (chainlit, vector-index, agent-run). Все три
+    # запускаются из ОДНОГО образа boba:latest, видят одни и те же
+    # данные через /app/local. Это и есть способ разделить состояние:
+    #
+    #   /app/local/config.toml   — настройки (читается всеми CLI/UI)
+    #   /app/local/.env          — переменные (через env_file, не volume)
+    #   /app/local/prompts/      — system-prompts (boba-adapter-prompt-providers,
+    #                              read-only с т.з. приложения)
+    #   /app/local/workspaces/   — рабочие директории сессий: каждая
+    #                              запись = один WorkspaceId (chainlit
+    #                              генерит per-session UUID, agent-run
+    #                              использует фикс. 0000...0001)
+    #   /app/local/chroma/       — ChromaDB persistent store; vector-index
+    #                              кладёт коллекции, chainlit/agent-run
+    #                              читают через kb_search/kb_list_collections
+    #   /app/local/logs/         — per-service лог-файлы (BOBA_APP_LOG_FILE
+    #                              указывает на отдельный файл для каждого
+    #                              сервиса)
+    #   /app/local/chainlit/     — chainlit runtime-state (.chainlit/,
+    #                              .files/ для аплоадов; создаётся самим
+    #                              chainlit'ом при первом старте)
+    #
+    # Шаблоны для онбординга — в boba-artifacts/local/*.example,
+    # оператор копирует их в local/* (см. README.md шаг 0).
+    - ./local:/app/local
+
 services:
   chainlit:
+    <<: *boba-base
     hostname: boba-chainlit
-    image: boba-chainlit:latest
-    build:
-      context: ..
-      dockerfile: boba-artifacts/Dockerfile
-    env_file:
-      - ./local/env.secrets
-      - ./local/env.tunables
-    volumes:
-      - chainlit-workspaces:/app/workspaces
-      - chainlit-logs:/app/logs
+    environment:
+      # Per-service лог-файл — единственная настройка, которая
+      # отличается между сервисами. Остальное — в config.toml.
+      BOBA_APP_LOG_FILE: /app/local/logs/chainlit.log
     expose:
       - "8501"
     ports:
@@ -27,9 +82,21 @@ services:
           - boba-chainlit
     restart: unless-stopped
 
-volumes:
-  chainlit-workspaces:
-  chainlit-logs:
+  # Ad-hoc CLI: ``docker compose run --rm vector-index list``.
+  vector-index:
+    <<: *boba-base
+    profiles: ["cli"]
+    environment:
+      BOBA_APP_LOG_FILE: /app/local/logs/vector-index.log
+    entrypoint: ["boba-cli-vector-index"]
+
+  # Ad-hoc CLI: ``docker compose run --rm agent-run --model X "запрос"``.
+  agent-run:
+    <<: *boba-base
+    profiles: ["cli"]
+    environment:
+      BOBA_APP_LOG_FILE: /app/local/logs/agent-run.log
+    entrypoint: ["boba-cli-agent-run"]
 
 networks:
   default:

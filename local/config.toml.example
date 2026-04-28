@@ -1,0 +1,56 @@
+# Шаблон для docker-compose deployment'а.
+# Копировать в ``boba-artifacts/local/config.toml`` и подправить под
+# нужды конкретного хоста. Сам config.toml gitignored
+# (см. .gitignore: ``local/*``); трекается только этот шаблон.
+#
+# Путь до файла прокидывается через BOBA_CONFIG_PATH (см. local/.env).
+# Симметричен dev-конфигу ../boba/local/config.toml — поля те же,
+# отличаются только пути (внутри контейнера всё под /app/local).
+#
+# Приоритет источников: CLI > env > .env-файл > TOML-файл > [TOML].
+# То есть всё, что задано здесь, можно перебить env-переменной
+# BOBA_<SECTION>_<FIELD>=... — но в boba-artifacts/local/.env держим
+# только URL/секреты, остальное живёт здесь.
+
+[app]
+log_level = "INFO"
+ssl_verify = true
+
+[agent]
+max_iterations = 20
+max_consecutive_tool_calls = 3
+
+[workspaces]
+base_dir = "/app/local/workspaces"
+user_subdir = "user"
+system_subdir = "system"
+tmp_subdir = "tmp"
+
+[prompts]
+dir = "/app/local/prompts"
+
+[chainlit]
+host = "0.0.0.0"
+port = "8501"
+root_path = "/boba"
+app_root = "/app/local/chainlit"
+headless = "true"
+models = [
+    "qwen3",
+    "qwen3-0.6b",
+    "qwen3-235b",
+    "qwen3.5-35b",
+    "qwen3.5-122b",
+    "deepseek-coder-v2-16b",
+    "qwen2.5-coder-1.5b",
+    "llama3.1-8b",
+    "gemini",
+]
+ui_name = "Boba"
+enable_telemetry = false
+upload_max_size_mb = 500
+upload_max_files = 20
+upload_accept = ["*/*"]
+
+[ext.chromadb]
+persist_path = "/app/local/chroma"

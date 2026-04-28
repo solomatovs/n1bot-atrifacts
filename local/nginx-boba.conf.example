@@ -7,7 +7,7 @@
 #   1. nginx-контейнер и boba-chainlit — в одной docker network
 #      (по умолчанию "docker"). DNS-резолв хоста `boba-chainlit`
 #      делает встроенный Docker DNS по 127.0.0.11.
-#   2. CHAINLIT_ROOT_PATH в local/env.tunables должен совпадать с
+#   2. CHAINLIT_ROOT_PATH в ../boba/local/.env должен совпадать с
 #      префиксом location'а (по умолчанию /boba).
 #
 # Публичный URL: https://<host>/boba/
