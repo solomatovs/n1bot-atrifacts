@@ -19,6 +19,9 @@ ssl_verify = true
 [agent]
 max_iterations = 20
 max_consecutive_tool_calls = 3
+tools_enabled = true
+tools_allow = ["cat", "pwd", "ls", "grep", "confluence_outline", "confluence_section"]
+
 
 [workspaces]
 base_dir = "/app/local/workspaces"
