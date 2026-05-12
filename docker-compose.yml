@@ -2,24 +2,29 @@
 # выбирается per-service через ``entrypoint``/``command``.
 #
 #   docker compose build                            # собирает образ
-#   docker compose up -d chainlit                   # запускает веб-UI как daemon
-#   docker compose run --rm vector-index --vector-index-action list
-#   docker compose run --rm -T agent-run --agent-run-model qwen3 \
-#                                        --agent-run-query "Привет"
+#   docker compose up -d chainlit                   # запускает web UI как daemon
+#   docker compose run --rm -T cli-agent \
+#       --cli.model qwen3 --cli.query "Привет"     # одиночный запрос
+#   docker compose run --rm cli-agent --cli.model qwen3   # REPL (без query)
 #
-# CLI-флаги генерируются из схемы ConfigSection: каждое поле —
-# флаг ``--<section>-<field>``. Помощь: ``run --rm <cli> --help``.
-# Позиционных аргументов нет. Подробности — в README.md, раздел "Ad-hoc CLI".
+# CLI-флаги — dotted-path под ConfigPath: ``--<section>.<field>=<value>``
+# или ``--<section>.<field> <value>``. Тот же ConfigKey, что мапится в
+# env (``BOBA_<SEG>__<SEG>__<FIELD>``) и TOML (``[section] field``).
+# Тире внутри сегмента конвертируются в подчёркивания
+# (``--cli.max-tokens`` == ``--cli.max_tokens``). Подробности — в
+# README.md, раздел "Ad-hoc CLI".
 #
 # CLI-services помечены ``profiles: ["cli"]`` — они НЕ стартуют с
 # ``docker compose up``, только при явном ``run --rm <name>``.
 #
 # Конфигурация:
-#   local/config.toml — все настройки (log_level, agent loop, chainlit,
-#                       paths, ext.chromadb). Путь к нему — BOBA_CONFIG_PATH.
-#   local/.env        — только URL'ы (LLM) и секреты (api-key, auth-secret).
-#   per-service env   — только то, что отличается между сервисами:
-#                       BOBA_APP_LOG_FILE — каждый сервис в свой лог-файл.
+#   local/config.toml — все настройки ([agent] core+workspaces+openai+
+#                       prompts+runtime; [cli] и [chainlit] DTO;
+#                       [tool.<name>] enable + per-tool overlays).
+#                       Путь к нему — BOBA_CONFIG_PATH.
+#   local/.env        — только URL'ы и секреты (LLM base_url/api_key,
+#                       chainlit auth_secret, confluence base_url/token,
+#                       chromadb embedding endpoint).
 
 x-boba-base: &boba-base
   image: boba:latest
@@ -32,24 +37,23 @@ x-boba-base: &boba-base
     - ./local/.env
   volumes:
     # Один bind mount всей папки local/ — общая deployment-песочница
-    # для всех сервисов (chainlit, vector-index, agent-run). Все три
-    # запускаются из ОДНОГО образа boba:latest, видят одни и те же
-    # данные через /app/local. Это и есть способ разделить состояние:
+    # для всех сервисов (chainlit, cli-agent). Оба сервиса запускаются
+    # из ОДНОГО образа boba:latest, видят одни и те же данные через
+    # /app/local. Это и есть способ разделить состояние:
     #
     #   /app/local/config.toml   — настройки (читается всеми CLI/UI)
     #   /app/local/.env          — переменные (через env_file, не volume)
-    #   /app/local/prompts/      — system-prompts (boba-adapter-prompt-providers,
+    #   /app/local/prompts/      — system-prompts (PromptLoader,
     #                              read-only с т.з. приложения)
     #   /app/local/workspaces/   — рабочие директории сессий: каждая
     #                              запись = один WorkspaceId (chainlit
-    #                              генерит per-session UUID, agent-run
-    #                              использует фикс. 0000...0001)
-    #   /app/local/chroma/       — ChromaDB persistent store; vector-index
-    #                              кладёт коллекции, chainlit/agent-run
-    #                              читают через kb_search/kb_list_collections
-    #   /app/local/logs/         — per-service лог-файлы (BOBA_APP_LOG_FILE
-    #                              указывает на отдельный файл для каждого
-    #                              сервиса)
+    #                              генерит per-session UUID; cli-agent
+    #                              использует фикс. user/system workspaces)
+    #   /app/local/chroma/       — ChromaDB persistent store (tool.chromadb);
+    #                              kb_search/kb_list_collections читают
+    #                              отсюда
+    #   /app/local/logs/         — runtime-логи всех сервисов
+    #                              (поле [agent].log_file в config.toml)
     #   /app/local/chainlit/     — chainlit runtime-state (.chainlit/,
     #                              .files/ для аплоадов; создаётся самим
     #                              chainlit'ом при первом старте)
@@ -62,10 +66,7 @@ services:
   chainlit:
     <<: *boba-base
     hostname: boba-chainlit
-    environment:
-      # Per-service лог-файл — единственная настройка, которая
-      # отличается между сервисами. Остальное — в config.toml.
-      BOBA_APP_LOG_FILE: /app/local/logs/chainlit.log
+    entrypoint: ["boba-chainlit-agent"]
     expose:
       - "8501"
     ports:
@@ -82,21 +83,12 @@ services:
           - boba-chainlit
     restart: unless-stopped
 
-  # Ad-hoc CLI: ``docker compose run --rm vector-index list``.
-  vector-index:
+  # Ad-hoc CLI: ``docker compose run --rm -T cli-agent --cli.model X --cli.query "..."``.
+  # Без --cli.query запускается REPL — :q/exit/quit для выхода, /clear для сброса.
+  cli-agent:
     <<: *boba-base
     profiles: ["cli"]
-    environment:
-      BOBA_APP_LOG_FILE: /app/local/logs/vector-index.log
-    entrypoint: ["boba-cli-vector-index"]
-
-  # Ad-hoc CLI: ``docker compose run --rm agent-run --model X "запрос"``.
-  agent-run:
-    <<: *boba-base
-    profiles: ["cli"]
-    environment:
-      BOBA_APP_LOG_FILE: /app/local/logs/agent-run.log
-    entrypoint: ["boba-cli-agent-run"]
+    entrypoint: ["boba-cli-agent"]
 
 networks:
   default:

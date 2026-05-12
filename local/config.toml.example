@@ -7,53 +7,134 @@
 # Симметричен dev-конфигу ../boba/local/config.toml — поля те же,
 # отличаются только пути (внутри контейнера всё под /app/local).
 #
-# Приоритет источников: CLI > env > .env-файл > TOML-файл > [TOML].
-# То есть всё, что задано здесь, можно перебить env-переменной
-# BOBA_<SECTION>_<FIELD>=... — но в boba-artifacts/local/.env держим
-# только URL/секреты, остальное живёт здесь.
+# Приоритет источников: CLI > env-file > env > TOML.
+# Любое поле здесь можно перебить env-переменной
+# BOBA_<SEG>__<SEG>__<FIELD>=... — но в local/.env держим только
+# URL/секреты, остальное живёт тут.
+#
+# Секции:
+#   [agent]       — AppConfig (cli + chainlit): inline-композит
+#                    core + workspaces + openai + prompts + runtime.
+#   [cli]         — AgentRunConfig (boba-cli-agent).
+#   [chainlit]    — ChainlitConfig (boba-chainlit-agent).
+#   [tool.<name>] — конфиги tool-плагинов (entry_points discovery +
+#                    enable-флаг + per-tool PromptOverlay).
 
-[app]
-log_level = "INFO"
-ssl_verify = true
-
+# --- AppConfig: inline core + workspaces + openai + prompts + runtime ---
 [agent]
-max_iterations = 20
-max_consecutive_tool_calls = 3
-tools_enabled = true
-tools_allow = ["cat", "pwd", "ls", "grep", "confluence_outline", "confluence_section"]
-
-
-[workspaces]
+# core
+log_level = "INFO"
+ssl_verify = false
+# log_file: имя поля оканчивается на `_FILE`, что коллидирует с конвенцией
+# EnvFileSource (Docker secrets) и в env работать не будет — задаётся
+# только тут или в CLI.
+log_file = "/app/local/logs/boba.log"
+# workspaces
 base_dir = "/app/local/workspaces"
 user_subdir = "user"
 system_subdir = "system"
 tmp_subdir = "tmp"
-
-[prompts]
+# openai (base_url/api_key обычно перекрываются env'ом из local/.env)
+base_url = "http://litellm:4000"
+api_key = "ollama"
+# prompts
 dir = "/app/local/prompts"
+# runtime
+max_iterations = 20
+max_consecutive_tool_calls = 3
 
+# --- boba-cli-agent (AgentRunConfig) ---
+# model обязателен; query пусто → REPL, query задан → single-shot.
+# Sampling-параметры (temperature/top_p/max_tokens/seed/stop/...) опциональны.
+[cli]
+model = ""
+query = ""
+# temperature = 0.7
+# top_p = 0.9
+# max_tokens = 4096
+# seed = 0
+# stop = []
+# frequency_penalty = 0.0
+# presence_penalty = 0.0
+
+# --- boba-chainlit-agent (ChainlitConfig) ---
+# model обязателен (используется для всех запросов из UI).
+# auth_secret обычно из env (см. BOBA_CHAINLIT__AUTH_SECRET в local/.env).
 [chainlit]
+model = ""
 host = "0.0.0.0"
 port = "8501"
 root_path = "/boba"
-app_root = "/app/local/chainlit"
 headless = "true"
-models = [
-    "qwen3",
-    "qwen3-0.6b",
-    "qwen3-235b",
-    "qwen3.5-35b",
-    "qwen3.5-122b",
-    "deepseek-coder-v2-16b",
-    "qwen2.5-coder-1.5b",
-    "llama3.1-8b",
-    "gemini",
-]
-ui_name = "Boba"
-enable_telemetry = false
-upload_max_size_mb = 500
-upload_max_files = 20
-upload_accept = ["*/*"]
+app_root = "/app/local/chainlit"
+# ui_name = "Boba"
+# enable_telemetry = false
+# upload_max_size_mb = 500
+# upload_max_files = 20
+# upload_accept = ["*/*"]
 
-[ext.chromadb]
+# --- tool-плагины (entry_points discovery; enable=false => плагин пропускается) ---
+
+# kb_search + kb_list_collections (read-only)
+[tool.chromadb]
+enable = false
 persist_path = "/app/local/chroma"
+# "default" = built-in ONNX all-MiniLM-L6-v2 (локально, без сети).
+# Иначе — модель LiteLLM/OpenAI-API; base_url/api_key обычно из env
+# (BOBA_TOOL__CHROMADB__EMBEDDING_BASE_URL / __EMBEDDING_API_KEY).
+embedding_model = "default"
+embedding_base_url = ""
+embedding_api_key = ""
+snippet_chars = 300
+max_top_k = 20
+# per-tool PromptOverlay (description + поля схемы):
+#   [tool.chromadb.kb_search]
+#   description = ""
+#   fields = {}
+
+# 15 файловых tools под общим enable-флагом:
+# append/cat/cd/cp/edit/grep/ls/mkdir/mv/pwd/rm/stat/touch/tree/write
+[tool.files]
+enable = false
+# [tool.files.cat]
+# max_lines = 2000
+# [tool.files.cat.prompt]
+# description = ""
+# fields = {}
+
+# html_outline + html_section (работают по workspace)
+[tool.html]
+enable = false
+# [tool.html.html_outline]
+# description = ""
+# fields = {}
+# [tool.html.html_section]
+# description = ""
+# fields = {}
+
+# confluence_search + confluence_page_outline + confluence_page_section.
+# Общий connection-блок на корне плагина (base_url/auth_token обычно из env:
+# BOBA_TOOL__CONFLUENCE__BASE_URL / __AUTH_TOKEN).
+[tool.confluence]
+enable = false
+base_url = ""
+auth_token = ""
+auth_method = "pat"          # pat | basic
+auth_user = ""               # только для basic-auth
+timeout_sec = 30.0
+body_format = "view"         # view | export_view | storage
+# [tool.confluence.confluence_search]
+# description = ""
+# fields = {}
+# [tool.confluence.confluence_page_outline]
+# description = ""
+# fields = {}
+# [tool.confluence.confluence_page_section]
+# description = ""
+# fields = {}
+
+# fts_search + fts_list_indexes (read-only поверх pg_catalog tsvector)
+# [tool.postgres_fts]
+# enable = false
+# dsn = "postgresql://user:pass@host:5432/db"
+# whitelist_schemas = ["public"]

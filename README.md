@@ -8,7 +8,7 @@ glibc/gcc/python и `docker-compose.yml`.
 
 ```
 <parent>/
-├── boba/               # исходники (src/, pyproject.toml)
+├── boba/               # исходники (monorepo: packages/core|infra|tools|agents)
 └── boba-artifacts/     # этот репо
 ```
 
@@ -17,25 +17,26 @@ glibc/gcc/python и `docker-compose.yml`.
 ```
 boba-artifacts/
 ├── local/                   # build- и deployment-конфиги + runtime-state (*.example — в git, реальные — не в git):
-│   ├── .env              # deployment runtime: только URL'ы (LLM) + секреты (читается docker-compose)
-│   ├── config.toml       # все остальные настройки приложения (log_level, agent loop, chainlit, paths)
+│   ├── .env              # deployment runtime: URL'ы (LLM) + секреты (читается docker-compose)
+│   ├── config.toml       # все остальные настройки приложения ([agent]/[cli]/[chainlit]/[tool.*])
 │   ├── apt-sources.list  # override apt-репо (пустой = дефолт rootfs)
 │   ├── ca-chain.crt      # корпоративные CA (PEM, пустой = public-only)
 │   ├── nginx-boba.conf   # reverse-proxy (include в http-server nginx)
-│   ├── pip.conf          # /etc/pip.conf внутри рантайма (для отладки)
+│   ├── pip.conf          # /etc/pip.conf внутри рантайма (закрытый PyPI-mirror)
 │   ├── litellm-config.yaml.example  # пример конфига litellm-proxy
 │   ├── prompts.example/  # шаблонные system-prompts → копируются в prompts/
-│   ├── prompts/          # реальные system-prompts (read'ится BOBA_PROMPTS_DIR)
-│   ├── workspaces/       # session workspaces агента (project + history + scratch)
+│   ├── prompts/          # реальные system-prompts (читает PromptLoader,
+│   │                       путь — [agent] dir)
+│   ├── workspaces/       # session workspaces агента (project + history)
 │   ├── logs/             # runtime логи всех сервисов
-│   └── chroma/           # ChromaDB persistent state
+│   └── chroma/           # ChromaDB persistent state (tool.chromadb)
 ├── gcc-src/, glibc-src/,
 │   python-src/              # исходники для Dockerfile.base
 ├── wheels/                  # pre-downloaded .whl (generated командой из Шага 2)
 ├── images/                  # экспорт `docker save` (generated, не в git)
 ├── Dockerfile               # runtime (на основе boba-base) — единый образ для всех приложений
 ├── Dockerfile.base          # сборка glibc+gcc+python из astra_linux_ce
-└── docker-compose.yml       # сервисы: chainlit (daemon), agent-run / vector-index (CLI через --profile cli)
+└── docker-compose.yml       # сервисы: chainlit (daemon), cli-agent (CLI через --profile cli)
 ```
 
 В `local/` все файлы с суффиксом `.example` коммитятся, без суффикса — загитигнорены
@@ -45,14 +46,14 @@ boba-artifacts/
 
 - `boba-artifacts/local/` — **deployment-песочница**. Свой `.env`
   (URL'ы + секреты), свой `config.toml` (всё остальное),
-  свои `prompts/`, свои `workspaces/`, `logs/`, `chroma/`. docker-compose
+  свои `prompts/`, `workspaces/`, `logs/`, `chroma/`. docker-compose
   монтирует эту папку как `/app/local` в контейнер. Шаблоны
   (`.env.example`, `config.toml.example`, `prompts.example/`)
   закоммичены в репо `boba-artifacts`.
 - `../boba/local/` — **dev-песочница**. Используется VSCode
-  launch.json для локального запуска через `pip install -r dev-install.txt`.
-  Шаблоны живут в репо `boba/`. См.
-  [`../boba/local/README.md`](../boba/local/README.md).
+  launch.json для локального запуска через
+  `pip install -r dev-install.txt`. Шаблоны живут в репо `boba/`.
+  См. [`../boba/local/README.md`](../boba/local/README.md).
 
 Эти две папки **не пересекаются**: контейнер не видит dev-данные, dev
 не видит prod-state. Симметричная структура внутри обеих папок —
@@ -68,11 +69,12 @@ Build-оверрайды и deployment-конфиг — в `boba-artifacts/local
 cd boba-artifacts
 for f in local/*.example; do cp -n "$f" "${f%.example}"; done
 cp -rn local/prompts.example local/prompts
-# отредактировать local/.env       — задать BOBA_LLM_BASE_URL,
-#                                     BOBA_LLM_API_KEY,
-#                                     BOBA_CHAINLIT_AUTH_SECRET
-# отредактировать local/config.toml — log_level, agent loop, chainlit
-#                                     models/UI, paths, ...
+# отредактировать local/.env       — BOBA_AGENT__BASE_URL,
+#                                     BOBA_AGENT__API_KEY,
+#                                     BOBA_CHAINLIT__AUTH_SECRET
+# отредактировать local/config.toml — [agent] log_level/log_file/loop,
+#                                     [chainlit] model/host/port/UI,
+#                                     [tool.*] enable + overlay'ы
 # отредактировать local/prompts/*.md под deployment-нужды
 ```
 
@@ -81,17 +83,23 @@ cp -rn local/prompts.example local/prompts
 - **`.env`** — только то, что варьируется между средами и/или
   чувствительно: URL'ы внешних сервисов, API-ключи, JWT-секреты.
   `BOBA_CONFIG_PATH` тоже здесь — это путь до TOML внутри контейнера.
-- **`config.toml`** — всё остальное: log_level, agent loop, chainlit
-  server/UI, список моделей, пути под `/app/local/...`,
-  `[ext.chromadb] persist_path`. Поля симметричны dev-конфигу
+- **`config.toml`** — всё остальное: `[agent]` (core+workspaces+openai+
+  prompts+runtime), `[cli]` (AgentRunConfig), `[chainlit]` (ChainlitConfig),
+  `[tool.<name>]` (enable + per-tool overlays). Поля симметричны dev-конфигу
   `../boba/local/config.toml`.
-- **per-service env в `docker-compose.yml`** — только то, что
-  отличается между сервисами (сейчас это `BOBA_APP_LOG_FILE`:
-  каждый сервис пишет в свой лог).
+- **per-service env в `docker-compose.yml`** — пусто. Поле `[agent].log_file`
+  оканчивается на `_file` и коллидирует с конвенцией `EnvFileSource`
+  (Docker secrets), поэтому в env работать не будет — задаётся только
+  в TOML.
 
-Приоритет источников: CLI > env > .env-файл > TOML-файл > [TOML].
-Любое поле из `config.toml` можно перебить env-переменной
-`BOBA_<SECTION>_<FIELD>=...` (например, для отладки).
+Конвенция ключей (EnvSource):
+
+- env: `BOBA_<SEG>__<SEG>__<FIELD>` — двойной `_` между сегментами,
+  одиночный после префикса `BOBA_`. Сегмент в UPPER_CASE, `_` внутри
+  сегмента сохраняется (`max_iterations` → `MAX_ITERATIONS`).
+- TOML: `[<seg>.<seg>] <field>`.
+
+Приоритет источников: CLI > env-file > env > TOML.
 
 Dev-конфиг (для локального запуска через VSCode) — отдельная папка
 `../boba/local/`, со своими шаблонами и onboarding (см.
@@ -112,8 +120,8 @@ docker build -f Dockerfile.base -t boba-base:latest .
 ## 2. Build wheels (после правки pyproject.toml-ов в `../boba/packages/`)
 
 Runtime-зависимости декларируются в `pyproject.toml` каждого пакета
-(`../boba/packages/<name>/`). `pip wheel` собирает их транзитивы по
-графу.
+(`../boba/packages/<group>/<name>/`, где `<group>` — `core` / `infra/*` /
+`tools` / `agents`). `pip wheel` собирает их транзитивы по графу.
 
 Требует готовый `boba-base:latest`.
 
@@ -131,21 +139,30 @@ docker run --rm \
     rm -rf wheels && mkdir wheels
     cp -r /boba/packages /tmp/packages   # writable копия (хост :ro, .egg-info живёт в /tmp)
     pip3 wheel --no-cache-dir \
-        /tmp/packages/boba \
-        /tmp/packages/boba-adapter-fs-workspace \
-        /tmp/packages/boba-adapter-messages \
-        /tmp/packages/boba-adapter-openai \
-        /tmp/packages/boba-adapter-prompt-providers \
-        /tmp/packages/boba-config-cli \
-        /tmp/packages/boba-config-env \
-        /tmp/packages/boba-config-toml \
-        /tmp/packages/boba-ext-files \
-        /tmp/packages/boba-ext-chromadb \
-        /tmp/packages/boba-ext-confluence \
-        /tmp/packages/boba-ext-html \
-        /tmp/packages/boba-cli-agent-run \
-        /tmp/packages/boba-cli-vector-index \
-        /tmp/packages/boba-web-chainlit \
+        /tmp/packages/core/boba-patterns \
+        /tmp/packages/core/boba-schema \
+        /tmp/packages/core/boba-config \
+        /tmp/packages/core/boba-plugin \
+        /tmp/packages/core/boba-workspace \
+        /tmp/packages/core/boba-indexing \
+        /tmp/packages/core/boba-tools \
+        /tmp/packages/core/boba-llm \
+        /tmp/packages/core/boba-agent \
+        /tmp/packages/infra/config/boba-config-toml \
+        /tmp/packages/infra/llm/boba-openai \
+        /tmp/packages/infra/format/boba-html \
+        /tmp/packages/infra/format/boba-markdown \
+        /tmp/packages/infra/format/boba-text \
+        /tmp/packages/infra/transport/boba-transport-fs \
+        /tmp/packages/infra/transport/boba-transport-http \
+        /tmp/packages/infra/db/boba-db-postgres \
+        /tmp/packages/tools/boba-tool-chromadb \
+        /tmp/packages/tools/boba-tool-confluence \
+        /tmp/packages/tools/boba-tool-files \
+        /tmp/packages/tools/boba-tool-html \
+        /tmp/packages/tools/boba-tool-postgres-fts \
+        /tmp/packages/agents/boba-cli-agent \
+        /tmp/packages/agents/boba-chainlit-agent \
         pip setuptools wheel \
         -w wheels/
     chown -R "$HOST_UID:$HOST_GID" wheels
@@ -170,21 +187,30 @@ docker run --rm \
     rm -rf wheels && mkdir wheels
     cp -r /boba/packages /tmp/packages   # writable копия (хост :ro, .egg-info живёт в /tmp)
     pip3 wheel --no-cache-dir \
-        /tmp/packages/boba \
-        /tmp/packages/boba-adapter-fs-workspace \
-        /tmp/packages/boba-adapter-messages \
-        /tmp/packages/boba-adapter-openai \
-        /tmp/packages/boba-adapter-prompt-providers \
-        /tmp/packages/boba-config-cli \
-        /tmp/packages/boba-config-env \
-        /tmp/packages/boba-config-toml \
-        /tmp/packages/boba-ext-files \
-        /tmp/packages/boba-ext-chromadb \
-        /tmp/packages/boba-ext-confluence \
-        /tmp/packages/boba-ext-html \
-        /tmp/packages/boba-cli-agent-run \
-        /tmp/packages/boba-cli-vector-index \
-        /tmp/packages/boba-web-chainlit \
+        /tmp/packages/core/boba-patterns \
+        /tmp/packages/core/boba-schema \
+        /tmp/packages/core/boba-config \
+        /tmp/packages/core/boba-plugin \
+        /tmp/packages/core/boba-workspace \
+        /tmp/packages/core/boba-indexing \
+        /tmp/packages/core/boba-tools \
+        /tmp/packages/core/boba-llm \
+        /tmp/packages/core/boba-agent \
+        /tmp/packages/infra/config/boba-config-toml \
+        /tmp/packages/infra/llm/boba-openai \
+        /tmp/packages/infra/format/boba-html \
+        /tmp/packages/infra/format/boba-markdown \
+        /tmp/packages/infra/format/boba-text \
+        /tmp/packages/infra/transport/boba-transport-fs \
+        /tmp/packages/infra/transport/boba-transport-http \
+        /tmp/packages/infra/db/boba-db-postgres \
+        /tmp/packages/tools/boba-tool-chromadb \
+        /tmp/packages/tools/boba-tool-confluence \
+        /tmp/packages/tools/boba-tool-files \
+        /tmp/packages/tools/boba-tool-html \
+        /tmp/packages/tools/boba-tool-postgres-fts \
+        /tmp/packages/agents/boba-cli-agent \
+        /tmp/packages/agents/boba-chainlit-agent \
         pip setuptools wheel \
         -w wheels/
     chown -R "$HOST_UID:$HOST_GID" wheels
@@ -200,9 +226,9 @@ cd boba-artifacts
 docker compose build
 ```
 
-Ставит транзитивы через `pip install --find-links=/tmp/wheels` для
-всех локальных pyproject'ов (boba core + adapter-* + config-* +
-ext-* + cli-* + web-chainlit), потом editable-installs наших пакетов.
+Ставит транзитивы через `pip install --find-links=/tmp/wheels` для всех
+локальных pyproject'ов (core + infra + tools-плагины + cli-agent +
+chainlit-agent), потом no-deps installs наших пакетов.
 
 ## 4. Save images (для переноса в закрытый контур)
 
@@ -239,89 +265,68 @@ docker compose up -d chainlit
 
 ### Ad-hoc CLI
 
-CLI — **schema-driven**: каждое поле конфига становится флагом
-вида `--<section>-<field>`. Позиционных аргументов нет. Имя флага
-строится по правилу `cli_flag_name(ConfigKey)` — то же ConfigKey,
-которое мапится в env (`BOBA_<SECTION>_<FIELD>`) и TOML
-(`[section] field`). Что задано в `local/config.toml` — можно
-не писать на CLI.
+CLI — **schema-driven**: каждое поле конфига доступно как
+dotted-path флаг `--<section>.<field>=<value>` (либо
+`--<section>.<field> <value>`). Позиционных аргументов нет.
+Тот же ConfigKey мапится в env (`BOBA_<SEG>__<SEG>__<FIELD>`) и TOML
+(`[section] field`). Тире внутри сегмента конвертируются в
+подчёркивания (`--cli.max-tokens` == `--cli.max_tokens`). Что задано
+в `local/config.toml` — можно не писать на CLI.
 
-Полный help: `docker compose run --rm vector-index --help`
-(или `agent-run --help`) — там все поля с описаниями.
-
-#### vector-index — индексатор ChromaDB
-
-`persist_path` уже задан в `[ext.chromadb]` config.toml, его на CLI
-передавать не нужно.
-
-```bash
-# Список коллекций
-docker compose run --rm vector-index \
-    --vector-index-action list
-
-# Проиндексировать директорию в коллекцию
-docker compose run --rm vector-index \
-    --vector-index-action index \
-    --vector-index-paths /app/local/docs \
-    --vector-index-collection docs \
-    --vector-index-description "Документация продукта"
-
-# Несколько путей — CSV
-docker compose run --rm vector-index \
-    --vector-index-action index \
-    --vector-index-paths /app/local/docs,/app/local/prompts \
-    --vector-index-collection mixed
-
-# Удалить коллекцию (без интерактивного подтверждения)
-docker compose run --rm vector-index \
-    --vector-index-action delete \
-    --vector-index-collection docs \
-    --vector-index-confirm-skip true
-
-# Verbose-логирование (1=INFO, 2=DEBUG)
-docker compose run --rm vector-index \
-    --vector-index-action list \
-    --vector-index-verbose 1
-```
-
-Чтобы индексировать локальные файлы — положите их в
-`boba-artifacts/local/docs/` (или любую папку под `local/`),
-внутри контейнера они будут доступны под `/app/local/...`.
-
-#### agent-run — одиночный запрос или REPL
+#### cli-agent — одиночный запрос или REPL
 
 `model` — **обязательное поле**. Если задать его в config.toml
-как `[agent_run] model = "qwen3"`, на CLI можно не указывать.
+как `[cli] model = "qwen3"`, на CLI можно не указывать.
+Если `query` пуст → REPL; задан → single-shot.
 
 ```bash
 # Одиночный запрос (-T отключает TTY-аллокацию для не-интерактива)
-docker compose run --rm -T agent-run \
-    --agent-run-model qwen3 \
-    --agent-run-query "Привет"
+docker compose run --rm -T cli-agent \
+    --cli.model qwen3 \
+    --cli.query "Привет"
 
 # Запрос с sampling-параметрами
-docker compose run --rm -T agent-run \
-    --agent-run-model qwen3.5-35b \
-    --agent-run-query "Объясни RAG" \
-    --agent-run-temperature 0.2 \
-    --agent-run-max-tokens 800
+docker compose run --rm -T cli-agent \
+    --cli.model qwen3.5-35b \
+    --cli.query "Объясни RAG" \
+    --cli.temperature 0.2 \
+    --cli.max_tokens 800
 
 # REPL (query не задан → интерактивный цикл)
-docker compose run --rm agent-run \
-    --agent-run-model qwen3
+docker compose run --rm cli-agent \
+    --cli.model qwen3
 # »  /exit, /quit, :q — выход
 # »  /clear           — сбросить историю
 ```
 
-`vector-index` и `agent-run` помечены `profiles: ["cli"]` — они НЕ
-стартуют при `docker compose up`, только через `run --rm <name>`.
+`cli-agent` помечен `profiles: ["cli"]` — он НЕ стартует при
+`docker compose up`, только через `run --rm cli-agent`.
+
+#### tool-плагины
+
+Tool-плагины включаются через `[tool.<name>].enable = true` в
+`local/config.toml`. Discovery — через entry-point group
+`boba.plugins`, регистрируется автоматически при импорте пакета.
+
+Доступные плагины (по умолчанию все `enable = false`):
+
+| `[tool.<name>]` | Пакет | Tools |
+|---|---|---|
+| `chromadb`     | `boba-tool-chromadb`     | `kb_search`, `kb_list_collections` (read-only) |
+| `files`        | `boba-tool-files`        | 15 файловых tools: `cat`, `ls`, `grep`, `edit`, `write`, `cd`, `pwd`, `tree`, `cp`, `mv`, `rm`, `mkdir`, `touch`, `stat`, `append` |
+| `html`         | `boba-tool-html`         | `html_outline`, `html_section` |
+| `confluence`   | `boba-tool-confluence`   | `confluence_search`, `confluence_page_outline`, `confluence_page_section` |
+| `postgres_fts` | `boba-tool-postgres-fts` | `fts_search`, `fts_list_indexes` |
+
+Подробнее по полям секций — `local/config.toml.example`.
 
 ## Команды
 
 ```bash
-docker compose build                       # пересобрать runtime-образ
-docker compose up -d chainlit              # daemon UI
-docker compose logs -f chainlit            # логи UI
-docker compose run --rm <cli-name> args... # одиночный CLI-запуск
-docker compose down                        # остановить daemon-сервисы
+docker compose build                          # пересобрать runtime-образ
+docker compose up -d chainlit                 # daemon UI
+docker compose logs -f chainlit               # логи UI
+docker compose run --rm -T cli-agent ARGS...  # одиночный CLI-запуск
+docker compose run --rm cli-agent ARGS...     # CLI REPL
+docker compose down                           # остановить daemon-сервисы
 ```
