@@ -28,8 +28,10 @@ boba-artifacts/
 │   ├── prompts/          # реальные system-prompts (читает PromptLoader,
 │   │                       путь — [agent] dir)
 │   ├── workspaces/       # session workspaces агента (project + history)
-│   ├── logs/             # runtime логи всех сервисов
-│   └── chroma/           # ChromaDB persistent state (tool.chromadb)
+│   ├── chainlit/         # chainlit data dir (sessions/translations/…)
+│   ├── docs/, manual/    # справочные документы, доступные tool-плагинам
+│   ├── cache/            # runtime-кэш (embeddings, fetched pages и т.п.)
+│   └── logs/             # runtime логи всех сервисов
 ├── gcc-src/, glibc-src/,
 │   python-src/              # исходники для Dockerfile.base
 ├── wheels/                  # pre-downloaded .whl (generated командой из Шага 2)
@@ -46,7 +48,7 @@ boba-artifacts/
 
 - `boba-artifacts/local/` — **deployment-песочница**. Свой `.env`
   (URL'ы + секреты), свой `config.toml` (всё остальное),
-  свои `prompts/`, `workspaces/`, `logs/`, `chroma/`. docker-compose
+  свои `prompts/`, `workspaces/`, `logs/`, `cache/`. docker-compose
   монтирует эту папку как `/app/local` в контейнер. Шаблоны
   (`.env.example`, `config.toml.example`, `prompts.example/`)
   закоммичены в репо `boba-artifacts`.
@@ -140,27 +142,24 @@ docker run --rm \
     cp -r /boba/packages /tmp/packages   # writable копия (хост :ro, .egg-info живёт в /tmp)
     pip3 wheel --no-cache-dir \
         /tmp/packages/core/boba-patterns \
-        /tmp/packages/core/boba-schema \
-        /tmp/packages/core/boba-config \
-        /tmp/packages/core/boba-plugin \
+        /tmp/packages/core/boba-settings \
         /tmp/packages/core/boba-workspace \
         /tmp/packages/core/boba-indexing \
         /tmp/packages/core/boba-tools \
         /tmp/packages/core/boba-llm \
         /tmp/packages/core/boba-agent \
-        /tmp/packages/infra/config/boba-config-toml \
         /tmp/packages/infra/llm/boba-openai \
         /tmp/packages/infra/format/boba-html \
+        /tmp/packages/infra/format/boba-kbdoc \
         /tmp/packages/infra/format/boba-markdown \
         /tmp/packages/infra/format/boba-text \
         /tmp/packages/infra/transport/boba-transport-fs \
         /tmp/packages/infra/transport/boba-transport-http \
         /tmp/packages/infra/db/boba-db-postgres \
-        /tmp/packages/tools/boba-tool-chromadb \
-        /tmp/packages/tools/boba-tool-confluence \
         /tmp/packages/tools/boba-tool-files \
-        /tmp/packages/tools/boba-tool-html \
-        /tmp/packages/tools/boba-tool-postgres-fts \
+        /tmp/packages/tools/boba-tool-kb \
+        /tmp/packages/tools/boba-tool-postgres \
+        /tmp/packages/tools/boba-tool-shell \
         /tmp/packages/agents/boba-cli-agent \
         /tmp/packages/agents/boba-chainlit-agent \
         pip setuptools wheel \
@@ -188,27 +187,24 @@ docker run --rm \
     cp -r /boba/packages /tmp/packages   # writable копия (хост :ro, .egg-info живёт в /tmp)
     pip3 wheel --no-cache-dir \
         /tmp/packages/core/boba-patterns \
-        /tmp/packages/core/boba-schema \
-        /tmp/packages/core/boba-config \
-        /tmp/packages/core/boba-plugin \
+        /tmp/packages/core/boba-settings \
         /tmp/packages/core/boba-workspace \
         /tmp/packages/core/boba-indexing \
         /tmp/packages/core/boba-tools \
         /tmp/packages/core/boba-llm \
         /tmp/packages/core/boba-agent \
-        /tmp/packages/infra/config/boba-config-toml \
         /tmp/packages/infra/llm/boba-openai \
         /tmp/packages/infra/format/boba-html \
+        /tmp/packages/infra/format/boba-kbdoc \
         /tmp/packages/infra/format/boba-markdown \
         /tmp/packages/infra/format/boba-text \
         /tmp/packages/infra/transport/boba-transport-fs \
         /tmp/packages/infra/transport/boba-transport-http \
         /tmp/packages/infra/db/boba-db-postgres \
-        /tmp/packages/tools/boba-tool-chromadb \
-        /tmp/packages/tools/boba-tool-confluence \
         /tmp/packages/tools/boba-tool-files \
-        /tmp/packages/tools/boba-tool-html \
-        /tmp/packages/tools/boba-tool-postgres-fts \
+        /tmp/packages/tools/boba-tool-kb \
+        /tmp/packages/tools/boba-tool-postgres \
+        /tmp/packages/tools/boba-tool-shell \
         /tmp/packages/agents/boba-cli-agent \
         /tmp/packages/agents/boba-chainlit-agent \
         pip setuptools wheel \
@@ -312,11 +308,10 @@ Tool-плагины включаются через `[tool.<name>].enable = true
 
 | `[tool.<name>]` | Пакет | Tools |
 |---|---|---|
-| `chromadb`     | `boba-tool-chromadb`     | `kb_search`, `kb_list_collections` (read-only) |
-| `files`        | `boba-tool-files`        | 15 файловых tools: `cat`, `ls`, `grep`, `edit`, `write`, `cd`, `pwd`, `tree`, `cp`, `mv`, `rm`, `mkdir`, `touch`, `stat`, `append` |
-| `html`         | `boba-tool-html`         | `html_outline`, `html_section` |
-| `confluence`   | `boba-tool-confluence`   | `confluence_search`, `confluence_page_outline`, `confluence_page_section` |
-| `postgres_fts` | `boba-tool-postgres-fts` | `fts_search`, `fts_list_indexes` |
+| `files` | `boba-tool-files` | 16 файловых tools: `cat`, `ls`, `grep`, `edit`, `write`, `append`, `cd`, `pwd`, `tree`, `cp`, `mv`, `rm`, `mkdir`, `touch`, `stat` |
+| `kb`    | `boba-tool-kb`    | `kb_search_hybrid`, `kb_search_vector`, `kb_search_fts`, `confluence_search_cql`, `confluence_list_spaces`, `confluence_ingest_spaces`, `confluence_ingest_pages`, `confluence_ingest_cql`, `confluence_download` (поверх postgres+pgvector с гибридным RRF) |
+| `pg`    | `boba-tool-postgres` | `query`, `list_tables`, `describe_table`, `fts_search` — ad-hoc read-only SQL/FTS поверх `boba-db-postgres` |
+| `shell` | `boba-tool-shell` | `bash_local` (локальный bash; sandbox-вариант `bash_sandbox` через bubblewrap опционально) |
 
 Подробнее по полям секций — `local/config.toml.example`.
 
