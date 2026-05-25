@@ -3,7 +3,7 @@
 # Один образ для всего монорепо: core (patterns/settings/workspace/
 # indexing/tools/llm/agent) + infra (llm-openai/format-html|kbdoc|
 # markdown|text/transport-fs|http/db-postgres) + tools-плагины
-# (files/kb/postgres/shell) + agents (cli-agent + chainlit-agent).
+# (files/kb/postgres/shell/web) + agents (cli-agent + chainlit-agent).
 # Что именно запускается — выбирается на стороне docker-compose.yml
 # через ``entrypoint:``/``command:`` для каждого service'а.
 #
@@ -45,6 +45,7 @@ RUN pip3 install --no-cache-dir --find-links=/tmp/wheels \
       /tmp/boba/packages/tools/boba-tool-kb \
       /tmp/boba/packages/tools/boba-tool-postgres \
       /tmp/boba/packages/tools/boba-tool-shell \
+      /tmp/boba/packages/tools/boba-tool-web \
       /tmp/boba/packages/agents/boba-cli-agent \
       /tmp/boba/packages/agents/boba-chainlit-agent \
  && pip3 uninstall -y \
@@ -67,6 +68,7 @@ RUN pip3 install --no-cache-dir --find-links=/tmp/wheels \
       boba-tool-kb \
       boba-tool-postgres \
       boba-tool-shell \
+      boba-tool-web \
       boba-cli-agent \
       boba-chainlit-agent
 
@@ -83,7 +85,7 @@ COPY --from=deps /opt/python3.11/bin                          /opt/python3.11/bi
 # (boba.patterns, boba.settings, boba.workspace, boba.indexing,
 #  boba.tools, boba.llm, boba.agent, boba.provider.openai,
 #  boba.format.{html,kbdoc,markdown,text}, boba.transport.{fs,http},
-#  boba.db.postgres, boba.tool.{files,kb,postgres,shell},
+#  boba.db.postgres, boba.tool.{files,kb,postgres,shell,web},
 #  boba.cli.agent_run, boba.web.chainlit).
 
 # --- core ---
@@ -145,6 +147,9 @@ RUN pip3 install --no-cache-dir --no-deps          /app/packages/tools/boba-tool
 
 COPY boba/packages/tools/boba-tool-shell/          /app/packages/tools/boba-tool-shell/
 RUN pip3 install --no-cache-dir --no-deps          /app/packages/tools/boba-tool-shell
+
+COPY boba/packages/tools/boba-tool-web/            /app/packages/tools/boba-tool-web/
+RUN pip3 install --no-cache-dir --no-deps          /app/packages/tools/boba-tool-web
 
 # --- agents (entry-point apps) ---
 COPY boba/packages/agents/boba-cli-agent/          /app/packages/agents/boba-cli-agent/

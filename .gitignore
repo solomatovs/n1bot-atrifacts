@@ -18,3 +18,4 @@ images/
 .chainlit/
 .files/
 import/
+local/cache

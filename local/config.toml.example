@@ -1,54 +1,22 @@
-# Шаблон для docker-compose deployment'а.
-# Копировать в ``boba-artifacts/local/config.toml`` и подправить под
-# нужды конкретного хоста. Сам config.toml gitignored
-# (см. .gitignore: ``local/*``); трекается только этот шаблон.
-#
+# Шаблон для docker-compose deployment'а. Скопировать в
+# `boba-artifacts/local/config.toml` и заполнить. Сам config.toml
+# gitignored; трекается только этот шаблон.
 # Путь до файла прокидывается через BOBA_CONFIG_PATH (см. local/.env).
-# Симметричен dev-конфигу ../boba/local/config.toml — поля те же,
+# Симметричен dev-конфигу `../boba/local/config.toml` — поля те же,
 # отличаются только пути (внутри контейнера всё под /app/local).
-#
-# Приоритет источников: CLI > env-file > env > TOML.
-# Любое поле здесь можно перебить env-переменной
-# BOBA_<SEG>__<SEG>__<FIELD>=... — но в local/.env держим только
-# URL/секреты, остальное живёт тут.
-#
-# Секции:
-#   [agent]       — AppConfig (cli + chainlit): inline-композит
-#                    core + workspaces + openai + prompts + runtime.
-#   [cli]         — AgentRunConfig (boba-cli-agent).
-#   [chainlit]    — ChainlitConfig (boba-chainlit-agent).
-#   [tool.<name>] — конфиги tool-плагинов (entry_points discovery +
-#                    enable-флаг + per-tool PromptOverlay).
 
-# --- AppConfig: inline core + workspaces + openai + prompts + runtime ---
-[agent]
-# core
-log_level = "INFO"
-ssl_verify = false
-# log_file: имя поля оканчивается на `_FILE`, что коллидирует с конвенцией
-# EnvFileSource (Docker secrets) и в env работать не будет — задаётся
-# только тут или в CLI.
-log_file = "/app/local/logs/boba.log"
-# workspaces
-base_dir = "/app/local/workspaces"
-user_subdir = "user"
-system_subdir = "system"
-tmp_subdir = "tmp"
-# openai (base_url/api_key обычно перекрываются env'ом из local/.env)
-base_url = "http://litellm:4000"
-api_key = "ollama"
-# prompts
-dir = "/app/local/prompts"
-# runtime
-max_iterations = 20
-max_consecutive_tool_calls = 3
-
-# --- boba-cli-agent (AgentRunConfig) ---
-# model обязателен; query пусто → REPL, query задан → single-shot.
-# Sampling-параметры (temperature/top_p/max_tokens/seed/stop/...) опциональны.
-[cli]
+# boba-cli-agent
+[cli.agent]
 model = ""
-query = ""
+max_messages = 30
+system_prompt_dir = "/app/local/prompts"
+log_level = "INFO"
+log_file = "/app/local/logs/cli.log"
+user_workspace_dir = "/app/local/workspaces/user"
+system_workspace_dir = "/app/local/workspaces/system"
+base_url = "http://litellm:4000"
+api_key = ""
+# query = "..."
 # temperature = 0.7
 # top_p = 0.9
 # max_tokens = 4096
@@ -57,84 +25,280 @@ query = ""
 # frequency_penalty = 0.0
 # presence_penalty = 0.0
 
-# --- boba-chainlit-agent (ChainlitConfig) ---
-# model обязателен (используется для всех запросов из UI).
-# auth_secret обычно из env (см. BOBA_CHAINLIT__AUTH_SECRET в local/.env).
+# boba-chainlit-agent
 [chainlit]
 model = ""
+max_messages = 30
+system_prompt_dir = "/app/local/prompts"
+log_level = "INFO"
+log_file = "/app/local/logs/chainlit.log"
+user_workspace_dir = "/app/local/workspaces/user"
+system_workspace_dir = "/app/local/workspaces/system"
+base_url = "http://litellm:4000"
+api_key = ""
 host = "0.0.0.0"
-port = "8501"
-root_path = "/boba"
-headless = "true"
+port = 8501
+url_prefix = "/boba"
+# Сгенерировать: openssl rand -hex 32 (или задать через BOBA_CHAINLIT__AUTH_SECRET).
+auth_secret = ""
+headless = true
 app_root = "/app/local/chainlit"
-# ui_name = "Boba"
-# enable_telemetry = false
-# upload_max_size_mb = 500
-# upload_max_files = 20
-# upload_accept = ["*/*"]
+chat_session_pool_capacity = 32
 
-# --- tool-плагины (entry_points discovery; enable=false => плагин пропускается) ---
 
-# kb_search + kb_list_collections (read-only)
-[tool.chromadb]
+# На каждый postgres connection — отдельная секция [postgres.<name>].
+# Потребители ссылаются на профиль по имени:
+#   - tool.kb.* / cli.kb.*  — через `profile` в `[kb.storage]`
+#     (см. defaults_from-template "postgres.{kb.storage:profile}").
+#   - tool.pg — через `profiles = [...]` в `[tool.pg]` (LLM в `target`).
+[postgres.main]
+host = ""
+port = 5432
+user = ""
+password = ""
+database = ""
+sslmode = "disable"
+application_name = "boba"
+pool_min_size = 1
+pool_max_size = 8
+connect_timeout_sec = 10.0
+statement_timeout_ms = 5000
+
+
+# embedding (vector-search)
+[embedding]
+# provider = "openai-compat"
+# endpoint = "http://litellm:4000"
+# api_key = ""
+# model = "intfloat/multilingual-e5-large"
+provider = "local"
+model = "intfloat/multilingual-e5-large"
+cache_dir = "/app/local/cache/fastembed"
+
+
+# confluence (общий connection-блок для confluence-tools и -CLI)
+[confluence]
+base_url = ""
+# none, pat, basic
+auth_method = "none"
+auth_token = ""
+auth_user = ""
+timeout_sec = 30.0
+ssl_verify = true
+body_format = "view"
+
+
+# Shared параметры для KB:
+#   profile — имя postgres-профиля для всех KB-tool'ов/CLI.
+#   application_name — общая метка соединений в pg_stat_activity.
+#   schema/*_table/batch_size — layout таблиц KB в postgres.
+[kb.storage]
+profile = "main"
+application_name = "boba-kb"
+schema = "public"
+chunks_table = "kb_chunks"
+collections_table = "kb_collections"
+batch_size = 100
+
+
+# KB-плагин (boba.plugins entry-point=kb)
+[tool.kb]
 enable = false
-persist_path = "/app/local/chroma"
-# "default" = built-in ONNX all-MiniLM-L6-v2 (локально, без сети).
-# Иначе — модель LiteLLM/OpenAI-API; base_url/api_key обычно из env
-# (BOBA_TOOL__CHROMADB__EMBEDDING_BASE_URL / __EMBEDDING_API_KEY).
-embedding_model = "default"
-embedding_base_url = ""
-embedding_api_key = ""
-snippet_chars = 300
-max_top_k = 20
-# per-tool PromptOverlay (description + поля схемы):
-#   [tool.chromadb.kb_search]
-#   description = ""
-#   fields = {}
+tools = [
+    # ingest (Confluence → kb_chunks)
+    "confluence_ingest_spaces",
+    "confluence_ingest_pages",
+    "confluence_ingest_cql",
+    # search (KB / online)
+    "kb_search_hybrid",
+    "kb_search_vector",
+    "kb_search_fts",
+    "confluence_search_cql",
+    "confluence_list_spaces",
+    # download (Confluence → workspace)
+    "confluence_download",
+]
 
-# 15 файловых tools под общим enable-флагом:
-# append/cat/cd/cp/edit/grep/ls/mkdir/mv/pwd/rm/stat/touch/tree/write
+# Индексирует confluence страницы
+[tool.kb.confluence.ingest]
+chunk_size = 4000
+chunk_overlap = 0
+collection = "kb_confluence"
+attachment_media_types = []
+attachment_titles = []
+
+
+# tool для скачивания confluence страниц.
+# dest_dir — workspace-relative (внутри session-workspace, не FS-путь).
+[tool.kb.confluence.download]
+dest_dir = "kb/confluence"
+attachment_media_types = []
+attachment_titles = []
+
+# tool для поиска по confluence
+[tool.kb.confluence.search.cql]
+snippet_chars = 300
+max_limit = 50
+
+
+# hybrid-search (vector + FTS + RRF)
+[tool.kb.search.hybrid]
+snippet_chars = 300
+rrf_k = 60
+rrf_pool = 40
+collections = ["kb_kbdoc", "kb_confluence"]
+max_top_k = 20
+
+# pure vector-search
+[tool.kb.search.vector]
+snippet_chars = 300
+rrf_k = 60
+rrf_pool = 40
+collections = ["kb_kbdoc", "kb_confluence"]
+max_top_k = 20
+
+# pure FTS-search
+[tool.kb.search.fts]
+snippet_chars = 300
+rrf_k = 60
+rrf_pool = 40
+collections = ["kb_kbdoc", "kb_confluence"]
+max_top_k = 20
+
+
+# cli для миграций kb-таблиц
+[cli.kb.bootstrap]
+
+
+# cli для индексации KbDoc-папки
+[cli.kb.kbdoc.ingest]
+chunk_size = 4000
+chunk_overlap = 0
+folder = "/app/local/docs"
+collection = "kb_kbdoc"
+prune = false
+
+
+# cli для индексации скачанных confluence-файлов
+[cli.kb.confluence.ingest.folder]
+chunk_size = 4000
+chunk_overlap = 0
+folder = "/app/local/downloads"
+collection = "kb_confluence"
+prune = false
+
+
+# cli для unified HTTP-ingest confluence в KB
+[cli.kb.confluence.ingest]
+chunk_size = 4000
+chunk_overlap = 0
+collection = "kb_confluence"
+space_type = "global"
+only = []
+skip = []
+page_ids = []
+prune = false
+attachment_media_types = ["image/*"]
+attachment_titles = []
+
+
+# cli для рендеринга sql-шаблона search-tool'а
+[cli.kb.search.render]
+template = "fts"
+query = "пример запроса"
+top_k = 5
+
+
+# cli для скачивания confluence страниц на файловую систему.
+# dest_dir — FS-путь от CWD контейнера (/app); симметрично
+# [cli.kb.confluence.ingest.folder].folder — пишем и читаем оттуда же.
+[cli.kb.confluence.download]
+dest_dir = "/app/local/downloads"
+as_markdown = true
+space_type = "global"
+only = []
+skip = []
+page_ids = []
+attachment_media_types = []
+attachment_titles = []
+
+
+# Выполняет SQL-запросы в postgres.
+# profiles — whitelist имён postgres-профилей; LLM передаёт одно
+# из имён в tool-arg `target`.
+[tool.pg]
+enable = false
+tools = [
+    "list_targets",
+    "query",
+    "list_tables",
+    "describe_table",
+]
+profiles = ["main"]
+max_rows = 100
+max_cell_chars = 2000
+
+
+# Файловые tools
 [tool.files]
 enable = false
-# [tool.files.cat]
-# max_lines = 2000
-# [tool.files.cat.prompt]
-# description = ""
-# fields = {}
+tools = [
+    "append",
+    "cat",
+    "read_bytes",
+    "grep",
+    "ls",
+    "stat",
+    "tree",
+    "unzip",
+    # "cd", "cp", "edit", "mkdir", "mv", "pwd", "rm", "touch", "write",
+]
+cat_max_chars = 50000
 
-# html_outline + html_section (работают по workspace)
-[tool.html]
-enable = false
-# [tool.html.html_outline]
-# description = ""
-# fields = {}
-# [tool.html.html_section]
-# description = ""
-# fields = {}
 
-# confluence_search + confluence_page_outline + confluence_page_section.
-# Общий connection-блок на корне плагина (base_url/auth_token обычно из env:
-# BOBA_TOOL__CONFLUENCE__BASE_URL / __AUTH_TOKEN).
-[tool.confluence]
+# Shell-tools (опасные; в deployment обычно disabled)
+[tool.shell]
 enable = false
-base_url = ""
-auth_token = ""
-auth_method = "pat"          # pat | basic
-auth_user = ""               # только для basic-auth
+tools = [
+    "bash_local",
+    "bash_sandbox",
+]
+
+
+# web-профили (hostname + auth). Имя профиля абстрактное; tool по
+# hostname URL'а ищет матчащий профиль в [tool.web].profiles.
+[web.raw_github]
+hostname = "raw.githubusercontent.com"
+[web.raw_github.auth]
+method = "none"
+
+[web.github]
+hostname = "github.com"
+[web.github.auth]
+method = "none"
+
+[web.google]
+hostname = "www.google.com"
+[web.google.auth]
+method = "none"
+
+
+# web request tools
+[tool.web]
+enable = false
+tools = [
+    "web_fetch",
+    "web_download",
+]
+profiles = [
+    "raw_github",
+    "github",
+    "google",
+]
 timeout_sec = 30.0
-body_format = "view"         # view | export_view | storage
-# [tool.confluence.confluence_search]
-# description = ""
-# fields = {}
-# [tool.confluence.confluence_page_outline]
-# description = ""
-# fields = {}
-# [tool.confluence.confluence_page_section]
-# description = ""
-# fields = {}
+ssl_verify = true
 
-# fts_search + fts_list_indexes (read-only поверх pg_catalog tsvector)
-# [tool.postgres_fts]
-# enable = false
-# dsn = "postgresql://user:pass@host:5432/db"
-# whitelist_schemas = ["public"]
+[tool.web.download]
+# workspace-relative path
+dest_dir = "web/downloads"
+# max_returned_files = 50

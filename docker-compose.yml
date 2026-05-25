@@ -1,30 +1,11 @@
-# Один образ ``boba:latest`` со всеми пакетами; что именно запускается —
-# выбирается per-service через ``entrypoint``/``command``.
-#
-#   docker compose build                            # собирает образ
-#   docker compose up -d chainlit                   # запускает web UI как daemon
-#   docker compose run --rm -T cli-agent \
-#       --cli.model qwen3 --cli.query "Привет"     # одиночный запрос
-#   docker compose run --rm cli-agent --cli.model qwen3   # REPL (без query)
-#
-# CLI-флаги — dotted-path под ConfigPath: ``--<section>.<field>=<value>``
-# или ``--<section>.<field> <value>``. Тот же ConfigKey, что мапится в
-# env (``BOBA_<SEG>__<SEG>__<FIELD>``) и TOML (``[section] field``).
-# Тире внутри сегмента конвертируются в подчёркивания
-# (``--cli.max-tokens`` == ``--cli.max_tokens``). Подробности — в
-# README.md, раздел "Ad-hoc CLI".
-#
-# CLI-services помечены ``profiles: ["cli"]`` — они НЕ стартуют с
-# ``docker compose up``, только при явном ``run --rm <name>``.
+# Один образ ``boba:latest``; что именно запускается — per-service
+# через ``entrypoint``/``command``. См. README.md (раздел "Run").
 #
 # Конфигурация:
-#   local/config.toml — все настройки ([agent] core+workspaces+openai+
-#                       prompts+runtime; [cli] и [chainlit] DTO;
-#                       [tool.<name>] enable + per-tool overlays).
-#                       Путь к нему — BOBA_CONFIG_PATH.
-#   local/.env        — только URL'ы и секреты (LLM base_url/api_key,
-#                       chainlit auth_secret, confluence base_url/token,
-#                       chromadb embedding endpoint).
+#   local/config.toml — настройки приложения ([cli.agent], [chainlit],
+#                       [postgres.<name>], [kb.storage], [tool.*], …).
+#                       Путь — через BOBA_CONFIG_PATH в local/.env.
+#   local/.env        — URL'ы и секреты.
 
 x-boba-base: &boba-base
   image: boba:latest
@@ -36,30 +17,17 @@ x-boba-base: &boba-base
     # См. local/.env.example.
     - ./local/.env
   volumes:
-    # Один bind mount всей папки local/ — общая deployment-песочница
-    # для всех сервисов (chainlit, cli-agent). Оба сервиса запускаются
-    # из ОДНОГО образа boba:latest, видят одни и те же данные через
-    # /app/local. Это и есть способ разделить состояние:
-    #
-    #   /app/local/config.toml   — настройки (читается всеми CLI/UI)
-    #   /app/local/.env          — переменные (через env_file, не volume)
-    #   /app/local/prompts/      — system-prompts (PromptLoader,
-    #                              read-only с т.з. приложения)
-    #   /app/local/workspaces/   — рабочие директории сессий: каждая
-    #                              запись = один WorkspaceId (chainlit
-    #                              генерит per-session UUID; cli-agent
-    #                              использует фикс. user/system workspaces)
-    #   /app/local/chroma/       — ChromaDB persistent store (tool.chromadb);
-    #                              kb_search/kb_list_collections читают
-    #                              отсюда
-    #   /app/local/logs/         — runtime-логи всех сервисов
-    #                              (поле [agent].log_file в config.toml)
-    #   /app/local/chainlit/     — chainlit runtime-state (.chainlit/,
-    #                              .files/ для аплоадов; создаётся самим
-    #                              chainlit'ом при первом старте)
-    #
-    # Шаблоны для онбординга — в boba-artifacts/local/*.example,
-    # оператор копирует их в local/* (см. README.md шаг 0).
+    # Bind mount всей папки local/ — единая deployment-песочница.
+    # Сохраняется на хосте:
+    #   /app/local/config.toml   — настройки
+    #   /app/local/prompts/      — system-prompts
+    #   /app/local/workspaces/   — workspaces сессий (chainlit UUID / cli user/system)
+    #   /app/local/chainlit/     — chainlit runtime-state
+    #   /app/local/logs/         — логи сервисов
+    #   /app/local/cache/        — runtime-кэши (fastembed ONNX-веса,
+    #                              переносимые offline на другой хост)
+    #   /app/local/docs/         — KbDoc-input для kbdoc.ingest
+    #   /app/local/downloads/    — output confluence.download / input для ingest.folder
     - ./local:/app/local
 
 services:
@@ -83,8 +51,8 @@ services:
           - boba-chainlit
     restart: unless-stopped
 
-  # Ad-hoc CLI: ``docker compose run --rm -T cli-agent --cli.model X --cli.query "..."``.
-  # Без --cli.query запускается REPL — :q/exit/quit для выхода, /clear для сброса.
+  # Ad-hoc CLI: ``docker compose run --rm -T cli-agent --cli.agent.model X --cli.agent.query "..."``.
+  # Без --cli.agent.query запускается REPL — :q/exit/quit для выхода, /clear для сброса.
   cli-agent:
     <<: *boba-base
     profiles: ["cli"]
