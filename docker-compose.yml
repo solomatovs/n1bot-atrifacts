@@ -1,20 +1,11 @@
-# Один образ ``boba:latest``; что именно запускается — per-service
-# через ``entrypoint``/``command``. См. README.md (раздел "Run").
-#
-# Конфигурация:
-#   local/config.toml — настройки приложения ([cli.agent], [chainlit],
-#                       [postgres.<name>], [kb.storage], [tool.*], …).
-#                       Путь — через BOBA_CONFIG_PATH в local/.env.
-#   local/.env        — URL'ы и секреты.
-
 x-boba-base: &boba-base
-  image: boba:latest
+  image: boba:tools-0.0.2
   build:
     context: ..
     dockerfile: boba-artifacts/Dockerfile
+    tags:
+      - boba:tools-${BOBA_TAG:-0.0.1}
   env_file:
-    # URL'ы и секреты. Tunables/paths живут в local/config.toml.
-    # См. local/.env.example.
     - ./local/.env
   volumes:
     # Bind mount всей папки local/ — единая deployment-песочница.

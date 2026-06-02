@@ -23,6 +23,7 @@ boba-artifacts/
 │   ├── prompts/, prompts.example/
 │   ├── workspaces/, chainlit/, cache/, logs/
 ├── wheels/                # pre-downloaded .whl (см. шаг 2)
+├── tessdata/              # *.traineddata для OCR liteparse (см. шаг 2b)
 ├── images/                # docker save → .tar.gz (gitignored)
 ├── gcc-src/, glibc-src/, python-src/   # для Dockerfile.base
 ├── Dockerfile             # runtime (FROM boba-base)
@@ -80,6 +81,7 @@ docker run --rm \
         /tmp/packages/infra/transport/boba-transport-fs \
         /tmp/packages/infra/transport/boba-transport-http \
         /tmp/packages/infra/db/boba-db-postgres \
+        /tmp/packages/tools/boba-tool-doc \
         /tmp/packages/tools/boba-tool-files \
         /tmp/packages/tools/boba-tool-kb \
         /tmp/packages/tools/boba-tool-postgres \
@@ -95,6 +97,37 @@ docker run --rm \
 
 Закрытый контур — то же, но прокинуть `-v "$(pwd)/local/pip.conf":/etc/pip.conf:ro` и
 прописать в `local/pip.conf` `index-url`/`extra-index-url`/`trusted-host`.
+
+> `boba-tool-doc` тянет стороннюю зависимость `liteparse` (бинарный wheel
+> `manylinux_2_28`, `cp311`). В открытом контуре она скачается в `wheels/`
+> вместе с остальным; в закрытом — должна быть в вашем индексе/зеркале.
+> Требует glibc ≥ 2.28 (base даёт ровно 2.28 — после сборки проверьте
+> `docker run --rm boba:latest python3 -c "import liteparse"`).
+
+## 2b. Tesseract-модели для OCR (для `boba-tool-doc`)
+
+`boba-tool-doc` парсит PDF/DOCX/XLSX/изображения через liteparse. Для
+сканов и картинок нужен OCR; сам движок Tesseract уже внутри wheel
+liteparse — нужны только языковые модели `*.traineddata`. Скачать их
+(на машине с доступом к github) в `tessdata/`; на build они копируются
+в образ (`COPY` в `Dockerfile` → `/opt/tessdata`, `TESSDATA_PREFIX`):
+
+```bash
+cd boba-artifacts
+mkdir -p tessdata
+base=https://github.com/tesseract-ocr/tessdata_best/raw/main
+for lang in eng rus osd; do
+  curl -fSL -o "tessdata/$lang.traineddata" "$base/$lang.traineddata"
+done
+```
+
+- `tessdata_best` — максимальная точность (eng+rus+osd ≈ 41 МБ), но
+  медленнее. Для скорости — `tessdata_fast` (тот же путь, файлы меньше).
+- Языки добавляются в список `for lang in …` (имя = код Tesseract).
+- OCR включается в `local/config.toml`: `[tool.doc].ocr_enabled = true`
+  (язык — `[tool.doc].ocr_language`, например `rus+eng`).
+- OCR не нужен (только текстовый слой PDF) — `tessdata/` оставляют пустой
+  (там лежит `.gitkeep`); папка обязана существовать, иначе `COPY` упадёт.
 
 ## 3. Build runtime (оффлайн, по `wheels/`)
 
@@ -161,6 +194,7 @@ docker compose run --rm --entrypoint python cli-agent -m boba.tool.kb.cli.conflu
 
 | `[tool.<name>]` | Пакет | Tools |
 |---|---|---|
+| `doc`   | `boba-tool-doc`   | `read_document`, `read_pages`, `document_outline`, `search_document` — парсинг PDF/DOCX/XLSX/картинок в текст (liteparse), поиск с координатами; OCR опц. (`ocr_enabled`, см. шаг 2b) |
 | `files` | `boba-tool-files` | `cat`, `ls`, `grep`, `stat`, `tree`, `append`, `read_bytes`, `unzip` (+ опц. `cd`, `cp`, `edit`, `mkdir`, `mv`, `pwd`, `rm`, `touch`, `write`) |
 | `kb`    | `boba-tool-kb`    | `kb_search_hybrid`/`vector`/`fts`, `confluence_search_cql`, `confluence_list_spaces`, `confluence_ingest_{spaces,pages,cql}`, `confluence_download` (поверх postgres+pgvector) |
 | `pg`    | `boba-tool-postgres` | `query`, `list_tables`, `describe_table`, `list_targets` — ad-hoc read-only SQL |

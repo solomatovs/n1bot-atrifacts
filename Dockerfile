@@ -3,7 +3,7 @@
 # Один образ для всего монорепо: core (patterns/settings/workspace/
 # indexing/tools/llm/agent) + infra (llm-openai/format-html|kbdoc|
 # markdown|text/transport-fs|http/db-postgres) + tools-плагины
-# (files/kb/postgres/shell/web) + agents (cli-agent + chainlit-agent).
+# (doc/files/kb/postgres/shell/web) + agents (cli-agent + chainlit-agent).
 # Что именно запускается — выбирается на стороне docker-compose.yml
 # через ``entrypoint:``/``command:`` для каждого service'а.
 #
@@ -41,6 +41,7 @@ RUN pip3 install --no-cache-dir --find-links=/tmp/wheels \
       /tmp/boba/packages/infra/transport/boba-transport-fs \
       /tmp/boba/packages/infra/transport/boba-transport-http \
       /tmp/boba/packages/infra/db/boba-db-postgres \
+      /tmp/boba/packages/tools/boba-tool-doc \
       /tmp/boba/packages/tools/boba-tool-files \
       /tmp/boba/packages/tools/boba-tool-kb \
       /tmp/boba/packages/tools/boba-tool-postgres \
@@ -64,6 +65,7 @@ RUN pip3 install --no-cache-dir --find-links=/tmp/wheels \
       boba-transport-fs \
       boba-transport-http \
       boba-db-postgres \
+      boba-tool-doc \
       boba-tool-files \
       boba-tool-kb \
       boba-tool-postgres \
@@ -136,6 +138,9 @@ COPY boba/packages/infra/db/boba-db-postgres/      /app/packages/infra/db/boba-d
 RUN pip3 install --no-cache-dir --no-deps          /app/packages/infra/db/boba-db-postgres
 
 # --- tools (boba.plugins entry-points) ---
+COPY boba/packages/tools/boba-tool-doc/            /app/packages/tools/boba-tool-doc/
+RUN pip3 install --no-cache-dir --no-deps          /app/packages/tools/boba-tool-doc
+
 COPY boba/packages/tools/boba-tool-files/          /app/packages/tools/boba-tool-files/
 RUN pip3 install --no-cache-dir --no-deps          /app/packages/tools/boba-tool-files
 
@@ -157,6 +162,16 @@ RUN pip3 install --no-cache-dir --no-deps          /app/packages/agents/boba-cli
 
 COPY boba/packages/agents/boba-chainlit-agent/     /app/packages/agents/boba-chainlit-agent/
 RUN pip3 install --no-cache-dir --no-deps          /app/packages/agents/boba-chainlit-agent
+
+# --- Tesseract language data для OCR в boba-tool-doc ---
+# Движок Tesseract вкомпилирован в wheel liteparse — системный tesseract
+# не нужен, нужны только языковые модели *.traineddata. Offline-сборка:
+# модели заранее скачиваются в boba-artifacts/tessdata/ (см. README шаг 2b)
+# и кладутся в образ ниже; путь отдаётся движку через TESSDATA_PREFIX
+# (liteparse читает его в рантайме). Папка должна существовать; если OCR
+# не нужен — она может быть пустой (только текстовый слой PDF).
+COPY boba-artifacts/tessdata/ /opt/tessdata/
+ENV TESSDATA_PREFIX=/opt/tessdata
 
 WORKDIR /app
 EXPOSE 8501

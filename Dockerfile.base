@@ -116,7 +116,21 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         libssl1.1 libffi6 libsqlite3-0 libbz2-1.0 \
         liblzma5 libreadline7 libncurses5 zlib1g curl \
+        imagemagick \
+        libreoffice-writer libreoffice-calc libreoffice-impress \
+        fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
+
+# ImageMagick нужен liteparse для конвертации картинок (PNG/JPG/TIFF) → PDF
+# перед парсингом/OCR. Дефолтная Debian-политика запрещает PDF-coder
+# (rights="none" pattern="PDF") — снимаем запрет, иначе конвертация
+# картинка→PDF падает с "not authorized". Версия policy.xml зависит от
+# дистрибутива (ImageMagick-6/-7); правим ту, что есть.
+RUN for p in /etc/ImageMagick-6/policy.xml /etc/ImageMagick-7/policy.xml; do \
+      if [ -f "$p" ]; then \
+        sed -i 's#rights="none" pattern="PDF"#rights="read|write" pattern="PDF"#' "$p"; \
+      fi; \
+    done
 
 # Python httpx/requests/openai/pip читают CA bundle через эти env-vars.
 # `ca-certificates.crt` включает и public CA, и кастомные из update-ca-certificates.
