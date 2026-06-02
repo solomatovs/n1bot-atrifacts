@@ -95,8 +95,50 @@ docker run --rm \
   '
 ```
 
-Закрытый контур — то же, но прокинуть `-v "$(pwd)/local/pip.conf":/etc/pip.conf:ro` и
-прописать в `local/pip.conf` `index-url`/`extra-index-url`/`trusted-host`.
+Закрытый контур (внутреннее PyPI-зеркало) — то же, но пропишите
+`index-url`/`extra-index-url`/`trusted-host` в `local/pip.conf` и прокиньте его
+в контейнер как `/etc/pip.conf`:
+
+```bash
+docker run --rm \
+  -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+  -v "$(pwd)":/artifacts \
+  -v "$(pwd)/../boba":/boba:ro \
+  -v "$(pwd)/local/pip.conf":/etc/pip.conf:ro \
+  -w /artifacts \
+  --entrypoint sh boba-base:latest -c '
+    set -e
+    rm -rf wheels && mkdir wheels
+    cp -r /boba/packages /tmp/packages
+    pip3 wheel --no-cache-dir \
+        /tmp/packages/core/boba-patterns \
+        /tmp/packages/core/boba-settings \
+        /tmp/packages/core/boba-workspace \
+        /tmp/packages/core/boba-indexing \
+        /tmp/packages/core/boba-tools \
+        /tmp/packages/core/boba-llm \
+        /tmp/packages/core/boba-agent \
+        /tmp/packages/infra/llm/boba-openai \
+        /tmp/packages/infra/format/boba-html \
+        /tmp/packages/infra/format/boba-kbdoc \
+        /tmp/packages/infra/format/boba-markdown \
+        /tmp/packages/infra/format/boba-text \
+        /tmp/packages/infra/transport/boba-transport-fs \
+        /tmp/packages/infra/transport/boba-transport-http \
+        /tmp/packages/infra/db/boba-db-postgres \
+        /tmp/packages/tools/boba-tool-doc \
+        /tmp/packages/tools/boba-tool-files \
+        /tmp/packages/tools/boba-tool-kb \
+        /tmp/packages/tools/boba-tool-postgres \
+        /tmp/packages/tools/boba-tool-shell \
+        /tmp/packages/tools/boba-tool-web \
+        /tmp/packages/agents/boba-cli-agent \
+        /tmp/packages/agents/boba-chainlit-agent \
+        pip setuptools wheel \
+        -w wheels/
+    chown -R "$HOST_UID:$HOST_GID" wheels
+  '
+```
 
 > `boba-tool-doc` тянет стороннюю зависимость `liteparse` (бинарный wheel
 > `manylinux_2_28`, `cp311`). В открытом контуре она скачается в `wheels/`
