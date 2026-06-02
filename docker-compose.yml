@@ -1,5 +1,7 @@
 x-boba-base: &boba-base
-  image: boba:tools-0.0.2
+  # Рантайм всегда гоняет последний собранный образ; версионный тег
+  # boba:tools-X.Y.Z навешивается дополнительно через build.tags (см. Makefile).
+  image: boba:latest
   build:
     context: ..
     dockerfile: boba-artifacts/Dockerfile
@@ -17,8 +19,8 @@ x-boba-base: &boba-base
     #   /app/local/logs/         — логи сервисов
     #   /app/local/cache/        — runtime-кэши (fastembed ONNX-веса,
     #                              переносимые offline на другой хост)
-    #   /app/local/docs/         — KbDoc-input для kbdoc.ingest
-    #   /app/local/downloads/    — output confluence.download / input для ingest.folder
+    #   /app/local/docs/         — KbDoc-input для confluence_doc
+    #   /app/local/downloads/    — output confluence.download / input для confluence.ingest
     - ./local:/app/local
 
 services:
@@ -31,7 +33,10 @@ services:
     ports:
       - 127.0.0.1:8501:8501
     healthcheck:
-      test: ["CMD-SHELL", "curl --fail http://localhost:8501/boba/healthz || exit 1"]
+      # Chainlit отдаёт /health под своим url_prefix (CHAINLIT_ROOT_PATH).
+      # Префикс берём из той же настройки, что и приложение; пусто = корень.
+      # Если url_prefix задан только в config.toml — продублируй его в .env.
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8501${BOBA_CHAINLIT__URL_PREFIX:-}/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

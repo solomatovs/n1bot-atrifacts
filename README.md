@@ -179,13 +179,13 @@ docker compose run --rm cli-agent
 docker compose run --rm --entrypoint python cli-agent -m boba.tool.kb.cli.kb_bootstrap
 
 # Индексировать KbDoc-папку (/app/local/docs → коллекция kb_kbdoc)
-docker compose run --rm --entrypoint python cli-agent -m boba.tool.kb.cli.kbdoc.ingest
+docker compose run --rm --entrypoint python cli-agent -m boba.tool.kb.cli.confluence_doc
 
 # Скачать Confluence на ФС (/app/local/downloads)
-docker compose run --rm --entrypoint python cli-agent -m boba.tool.kb.cli.confluence.download.http --page-ids 950276,950278
+docker compose run --rm --entrypoint python cli-agent -m boba.tool.kb.cli.confluence.download --page-ids 950276,950278
 
 # Индексировать скачанное в kb_confluence
-docker compose run --rm --entrypoint python cli-agent -m boba.tool.kb.cli.confluence.ingest.folder
+docker compose run --rm --entrypoint python cli-agent -m boba.tool.kb.cli.confluence.ingest
 ```
 
 ## Tool-плагины
