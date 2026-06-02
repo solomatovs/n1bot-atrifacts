@@ -41,6 +41,7 @@ RUN pip3 install --no-cache-dir --find-links=/tmp/wheels \
       /tmp/boba/packages/infra/transport/boba-transport-fs \
       /tmp/boba/packages/infra/transport/boba-transport-http \
       /tmp/boba/packages/infra/db/boba-db-postgres \
+      /tmp/boba/packages/tools/boba-tool-chart \
       /tmp/boba/packages/tools/boba-tool-doc \
       /tmp/boba/packages/tools/boba-tool-files \
       /tmp/boba/packages/tools/boba-tool-kb \
@@ -65,6 +66,7 @@ RUN pip3 install --no-cache-dir --find-links=/tmp/wheels \
       boba-transport-fs \
       boba-transport-http \
       boba-db-postgres \
+      boba-tool-chart \
       boba-tool-doc \
       boba-tool-files \
       boba-tool-kb \
@@ -138,6 +140,9 @@ COPY boba/packages/infra/db/boba-db-postgres/      /app/packages/infra/db/boba-d
 RUN pip3 install --no-cache-dir --no-deps          /app/packages/infra/db/boba-db-postgres
 
 # --- tools (boba.plugins entry-points) ---
+COPY boba/packages/tools/boba-tool-chart/          /app/packages/tools/boba-tool-chart/
+RUN pip3 install --no-cache-dir --no-deps          /app/packages/tools/boba-tool-chart
+
 COPY boba/packages/tools/boba-tool-doc/            /app/packages/tools/boba-tool-doc/
 RUN pip3 install --no-cache-dir --no-deps          /app/packages/tools/boba-tool-doc
 
