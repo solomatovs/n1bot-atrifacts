@@ -6,28 +6,27 @@ ARG GLIBC_VERSION=2.28
 ARG GCC_VERSION=8.5.0
 ARG PYTHON_VERSION=3.11.12
 
-# apt: доверять неподписанным репо (закрытый контур без GPG-ключей).
+# apt: доверять неподписанным репо (закрытый контур).
 RUN printf '%s\n' \
       'APT::Get::AllowUnauthenticated "true";' \
       'Acquire::AllowInsecureRepositories "true";' \
       'Acquire::AllowDowngradeToInsecureRepositories "true";' \
       > /etc/apt/apt.conf.d/99insecure
 
-# Опциональный override sources.list. Если файл пустой (только
-# комментарии) — используются дефолтные источники rootfs.
+# опц. override sources.list (пусто = дефолт rootfs)
 COPY local/apt-sources.list /tmp/sources.list.custom
 RUN if grep -qvE '^[[:space:]]*(#|$)' /tmp/sources.list.custom 2>/dev/null; then \
       cp /tmp/sources.list.custom /etc/apt/sources.list; \
     fi && rm /tmp/sources.list.custom
 
-# Опциональная цепочка корпоративных CA. Файл без BEGIN CERTIFICATE
-# = no-op (остаются только public CA из rootfs).
+# опц. корпоративные CA (без BEGIN CERTIFICATE = no-op)
 COPY local/ca-chain.crt /tmp/ca-chain.crt
 RUN if grep -qE '^-----BEGIN CERTIFICATE-----' /tmp/ca-chain.crt; then \
       cp /tmp/ca-chain.crt /usr/local/share/ca-certificates/ca-chain.crt && \
       update-ca-certificates; \
     fi && rm /tmp/ca-chain.crt
 
+# build-toolchain + -dev либы для сборки glibc/gcc/python
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential gawk bison xz-utils \
@@ -87,53 +86,52 @@ RUN cd /tmp && \
     make -j"$(nproc)" && make install && \
     rm -rf /tmp/Python*
 
-# ============================================================
-# Final: base — чистый runtime
-# ============================================================
+# Final stage: чистый runtime
 FROM astra_linux_ce_2.12-rootfs:latest
 
-# apt: доверять неподписанным репо (закрытый контур без GPG-ключей).
+# apt insecure + sources.list + CA — см. builder-stage выше
 RUN printf '%s\n' \
       'APT::Get::AllowUnauthenticated "true";' \
       'Acquire::AllowInsecureRepositories "true";' \
       'Acquire::AllowDowngradeToInsecureRepositories "true";' \
       > /etc/apt/apt.conf.d/99insecure
 
-# Опциональный override sources.list (см. builder-stage выше).
 COPY local/apt-sources.list /tmp/sources.list.custom
 RUN if grep -qvE '^[[:space:]]*(#|$)' /tmp/sources.list.custom 2>/dev/null; then \
       cp /tmp/sources.list.custom /etc/apt/sources.list; \
     fi && rm /tmp/sources.list.custom
 
-# Опциональная цепочка корпоративных CA (см. builder-stage выше).
 COPY local/ca-chain.crt /tmp/ca-chain.crt
 RUN if grep -qE '^-----BEGIN CERTIFICATE-----' /tmp/ca-chain.crt; then \
       cp /tmp/ca-chain.crt /usr/local/share/ca-certificates/ca-chain.crt && \
       update-ca-certificates; \
     fi && rm /tmp/ca-chain.crt
 
+# Runtime-зависимости:
+#   CPython-линки: ssl/ffi/sqlite3/bz2/lzma/readline/ncurses/zlib; curl — healthcheck.
+#   liteparse shell-out'ит конвертеры: imagemagick (img→PDF), libreoffice
+#     (docx/xlsx/pptx→PDF), ghostscript (gs). tesseract+pdfium — внутри wheel.
+#   bubblewrap — boba-tool-shell bash_sandbox; git — git-PromptProvider.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         libssl1.1 libffi6 libsqlite3-0 libbz2-1.0 \
         liblzma5 libreadline7 libncurses5 zlib1g curl \
         imagemagick \
         libreoffice-writer libreoffice-calc libreoffice-impress \
+        ghostscript \
         fonts-dejavu-core \
+        bubblewrap \
+        git \
     && rm -rf /var/lib/apt/lists/*
 
-# ImageMagick нужен liteparse для конвертации картинок (PNG/JPG/TIFF) → PDF
-# перед парсингом/OCR. Дефолтная Debian-политика запрещает PDF-coder
-# (rights="none" pattern="PDF") — снимаем запрет, иначе конвертация
-# картинка→PDF падает с "not authorized". Версия policy.xml зависит от
-# дистрибутива (ImageMagick-6/-7); правим ту, что есть.
+# снять Debian-запрет PDF-coder в ImageMagick (иначе img→PDF = "not authorized")
 RUN for p in /etc/ImageMagick-6/policy.xml /etc/ImageMagick-7/policy.xml; do \
       if [ -f "$p" ]; then \
         sed -i 's#rights="none" pattern="PDF"#rights="read|write" pattern="PDF"#' "$p"; \
       fi; \
     done
 
-# Python httpx/requests/openai/pip читают CA bundle через эти env-vars.
-# `ca-certificates.crt` включает и public CA, и кастомные из update-ca-certificates.
+# CA bundle для httpx/requests/openai/pip (public + кастомные CA)
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
     REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 

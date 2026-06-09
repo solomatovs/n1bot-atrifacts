@@ -1,30 +1,16 @@
 # Boba — runtime Dockerfile.
-#
-# Один образ для всего монорепо: core (patterns/settings/workspace/
-# indexing/tools/llm/agent) + infra (llm-openai/format-html|kbdoc|
-# markdown|text/transport-fs|http/db-postgres) + tools-плагины
-# (doc/files/kb/postgres/shell/web) + agents (cli-agent + chainlit-agent).
-# Что именно запускается — выбирается на стороне docker-compose.yml
-# через ``entrypoint:``/``command:`` для каждого service'а.
-#
-# Зависимости приходят декларативно из ``packages/<group>/<name>/
-# pyproject.toml``. Offline build остаётся: pip ходит за wheel'ами
-# через ``--find-links=/tmp/wheels`` (mirror подготавливается в
-# boba-artifacts/wheels), а pip.conf конфигурирует внутренний index.
 
 FROM boba-base:latest AS deps
 
 COPY boba-artifacts/local/pip.conf  /etc/pip.conf
 COPY boba-artifacts/wheels/         /tmp/wheels/
 
-# Копируем пакеты целиком: setuptools.packages.find в каждом pyproject
-# смотрит на реальный src/-каталог, поэтому одних pyproject.toml не
-# хватает — egg_info проверяет существование src/boba* на диске.
+# нужны реальные src/-каталоги: setuptools.packages.find/egg_info их проверяет
 COPY boba/packages/ /tmp/boba/packages/
 
-# Ставим наши пакеты со всеми транзитивами, потом удаляем metadata
-# самих наших пакетов: их исходники едут в финальный stage и ставятся
-# там no-deps. Транзитивы остаются в site-packages — копируются дальше.
+# stage deps: ставим пакеты с транзитивами (offline, из /tmp/wheels), затем
+# сносим metadata наших пакетов — исходники едут в финальный stage (no-deps).
+# Транзитивы остаются в site-packages и копируются дальше.
 RUN pip3 install --no-cache-dir --find-links=/tmp/wheels \
       /tmp/boba/packages/core/boba-patterns \
       /tmp/boba/packages/core/boba-settings \
@@ -36,6 +22,7 @@ RUN pip3 install --no-cache-dir --find-links=/tmp/wheels \
       /tmp/boba/packages/infra/llm/boba-openai \
       /tmp/boba/packages/infra/format/boba-html \
       /tmp/boba/packages/infra/format/boba-kbdoc \
+      /tmp/boba/packages/infra/format/boba-liteparse \
       /tmp/boba/packages/infra/format/boba-markdown \
       /tmp/boba/packages/infra/format/boba-text \
       /tmp/boba/packages/infra/transport/boba-transport-fs \
@@ -48,8 +35,8 @@ RUN pip3 install --no-cache-dir --find-links=/tmp/wheels \
       /tmp/boba/packages/tools/boba-tool-postgres \
       /tmp/boba/packages/tools/boba-tool-shell \
       /tmp/boba/packages/tools/boba-tool-web \
-      /tmp/boba/packages/agents/boba-cli-agent \
-      /tmp/boba/packages/agents/boba-chainlit-agent \
+      /tmp/boba/packages/agents/boba-cli \
+      /tmp/boba/packages/agents/boba-chainlit \
  && pip3 uninstall -y \
       boba-patterns \
       boba-settings \
@@ -61,6 +48,7 @@ RUN pip3 install --no-cache-dir --find-links=/tmp/wheels \
       boba-openai \
       boba-html \
       boba-kbdoc \
+      boba-liteparse \
       boba-markdown \
       boba-text \
       boba-transport-fs \
@@ -73,8 +61,8 @@ RUN pip3 install --no-cache-dir --find-links=/tmp/wheels \
       boba-tool-postgres \
       boba-tool-shell \
       boba-tool-web \
-      boba-cli-agent \
-      boba-chainlit-agent
+      boba-cli \
+      boba-chainlit
 
 FROM boba-base:latest
 
@@ -83,14 +71,8 @@ COPY boba-artifacts/local/pip.conf /etc/pip.conf
 COPY --from=deps /opt/python3.11/lib/python3.11/site-packages /opt/python3.11/lib/python3.11/site-packages
 COPY --from=deps /opt/python3.11/bin                          /opt/python3.11/bin
 
-# Порядок не важен для --no-deps, но соблюдаем топологию ради
-# читабельности: core → infra → tools → agents. Внутри namespace-пакета
-# ``boba.*`` каждый дистрибутив добавляет свои подпакеты
-# (boba.patterns, boba.settings, boba.workspace, boba.indexing,
-#  boba.tools, boba.llm, boba.agent, boba.provider.openai,
-#  boba.format.{html,kbdoc,markdown,text}, boba.transport.{fs,http},
-#  boba.db.postgres, boba.tool.{files,kb,postgres,shell,web},
-#  boba.cli.agent_run, boba.web.chainlit).
+# --no-deps: транзитивы уже в site-packages из stage deps. Порядок core ->
+# infra -> tools -> agents — только ради читабельности.
 
 # --- core ---
 COPY boba/packages/core/boba-patterns/             /app/packages/core/boba-patterns/
@@ -123,6 +105,9 @@ RUN pip3 install --no-cache-dir --no-deps          /app/packages/infra/format/bo
 
 COPY boba/packages/infra/format/boba-kbdoc/        /app/packages/infra/format/boba-kbdoc/
 RUN pip3 install --no-cache-dir --no-deps          /app/packages/infra/format/boba-kbdoc
+
+COPY boba/packages/infra/format/boba-liteparse/    /app/packages/infra/format/boba-liteparse/
+RUN pip3 install --no-cache-dir --no-deps          /app/packages/infra/format/boba-liteparse
 
 COPY boba/packages/infra/format/boba-markdown/     /app/packages/infra/format/boba-markdown/
 RUN pip3 install --no-cache-dir --no-deps          /app/packages/infra/format/boba-markdown
@@ -162,23 +147,20 @@ COPY boba/packages/tools/boba-tool-web/            /app/packages/tools/boba-tool
 RUN pip3 install --no-cache-dir --no-deps          /app/packages/tools/boba-tool-web
 
 # --- agents (entry-point apps) ---
-COPY boba/packages/agents/boba-cli-agent/          /app/packages/agents/boba-cli-agent/
-RUN pip3 install --no-cache-dir --no-deps          /app/packages/agents/boba-cli-agent
+COPY boba/packages/agents/boba-cli/                /app/packages/agents/boba-cli/
+RUN pip3 install --no-cache-dir --no-deps          /app/packages/agents/boba-cli
 
-COPY boba/packages/agents/boba-chainlit-agent/     /app/packages/agents/boba-chainlit-agent/
-RUN pip3 install --no-cache-dir --no-deps          /app/packages/agents/boba-chainlit-agent
+COPY boba/packages/agents/boba-chainlit/           /app/packages/agents/boba-chainlit/
+RUN pip3 install --no-cache-dir --no-deps          /app/packages/agents/boba-chainlit
 
-# --- Tesseract language data для OCR в boba-tool-doc ---
-# Движок Tesseract вкомпилирован в wheel liteparse — системный tesseract
-# не нужен, нужны только языковые модели *.traineddata. Offline-сборка:
-# модели заранее скачиваются в boba-artifacts/tessdata/ (см. README шаг 2b)
-# и кладутся в образ ниже; путь отдаётся движку через TESSDATA_PREFIX
-# (liteparse читает его в рантайме). Папка должна существовать; если OCR
-# не нужен — она может быть пустой (только текстовый слой PDF).
+# OCR-модели *.traineddata (offline, см. README 2b). tesseract — в wheel liteparse.
+# boba не передаёт tessdata_path, путь отдаём через env: TESSDATA_PATH (wrapper
+# liteparse) + TESSDATA_PREFIX (движок tesseract, fallback).
 COPY boba-artifacts/tessdata/ /opt/tessdata/
-ENV TESSDATA_PREFIX=/opt/tessdata
+ENV TESSDATA_PREFIX=/opt/tessdata \
+    TESSDATA_PATH=/opt/tessdata
 
 WORKDIR /app
 EXPOSE 8501
 
-CMD ["boba-chainlit-agent"]
+CMD ["boba-chainlit"]

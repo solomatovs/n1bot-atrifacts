@@ -48,7 +48,7 @@ cp -rn local/prompts.example local/prompts
 ## 1. Base-образ (разово, ~30 мин)
 
 ```bash
-docker build -f Dockerfile.base -t boba-base:latest .
+make base       # = docker build -f Dockerfile.base -t boba-base:latest .
 ```
 
 ## 2. Build wheels (после правки `../boba/packages/`)
@@ -76,19 +76,21 @@ docker run --rm \
         /tmp/packages/infra/llm/boba-openai \
         /tmp/packages/infra/format/boba-html \
         /tmp/packages/infra/format/boba-kbdoc \
+        /tmp/packages/infra/format/boba-liteparse \
         /tmp/packages/infra/format/boba-markdown \
         /tmp/packages/infra/format/boba-text \
         /tmp/packages/infra/transport/boba-transport-fs \
         /tmp/packages/infra/transport/boba-transport-http \
         /tmp/packages/infra/db/boba-db-postgres \
+        /tmp/packages/tools/boba-tool-chart \
         /tmp/packages/tools/boba-tool-doc \
         /tmp/packages/tools/boba-tool-files \
         /tmp/packages/tools/boba-tool-kb \
         /tmp/packages/tools/boba-tool-postgres \
         /tmp/packages/tools/boba-tool-shell \
         /tmp/packages/tools/boba-tool-web \
-        /tmp/packages/agents/boba-cli-agent \
-        /tmp/packages/agents/boba-chainlit-agent \
+        /tmp/packages/agents/boba-cli \
+        /tmp/packages/agents/boba-chainlit \
         pip setuptools wheel \
         -w wheels/
     chown -R "$HOST_UID:$HOST_GID" wheels
@@ -121,19 +123,21 @@ docker run --rm \
         /tmp/packages/infra/llm/boba-openai \
         /tmp/packages/infra/format/boba-html \
         /tmp/packages/infra/format/boba-kbdoc \
+        /tmp/packages/infra/format/boba-liteparse \
         /tmp/packages/infra/format/boba-markdown \
         /tmp/packages/infra/format/boba-text \
         /tmp/packages/infra/transport/boba-transport-fs \
         /tmp/packages/infra/transport/boba-transport-http \
         /tmp/packages/infra/db/boba-db-postgres \
+        /tmp/packages/tools/boba-tool-chart \
         /tmp/packages/tools/boba-tool-doc \
         /tmp/packages/tools/boba-tool-files \
         /tmp/packages/tools/boba-tool-kb \
         /tmp/packages/tools/boba-tool-postgres \
         /tmp/packages/tools/boba-tool-shell \
         /tmp/packages/tools/boba-tool-web \
-        /tmp/packages/agents/boba-cli-agent \
-        /tmp/packages/agents/boba-chainlit-agent \
+        /tmp/packages/agents/boba-cli \
+        /tmp/packages/agents/boba-chainlit \
         pip setuptools wheel \
         -w wheels/
     chown -R "$HOST_UID:$HOST_GID" wheels
@@ -174,6 +178,24 @@ done
 ## 3. Build runtime (оффлайн, по `wheels/`)
 
 ```bash
+make build
+```
+
+`make build` тегирует образ по git-версии **исходников** (`../boba`):
+есть git-тег на HEAD → этот тег, иначе короткий commit (грязное дерево →
+суффикс `-dirty`). Образ получает два тега: `boba:<версия>` и `boba:latest`;
+вычисленный тег пишется в `boba-artifacts/.env` (`BOBA_TAG=...`), откуда его
+берёт `docker compose` и на сборку, и на запуск. Полезное:
+
+```bash
+make print-tag                 # показать тег, который будет присвоен
+make build BOBA_TAG=1.2.3      # запинить тег вручную
+make build SRC_DIR=/path/boba  # другой каталог исходников
+```
+
+Можно и напрямую (тогда тег возьмётся из `.env` или дефолт `latest`):
+
+```bash
 docker compose build
 ```
 
@@ -203,12 +225,16 @@ docker compose logs -f chainlit
 
 ### Ad-hoc CLI агент
 
-`model` — обязательно. Если задан в `[cli.agent].model` — на CLI можно не указывать.
-Пустой `query` → REPL, заданный → single-shot.
+CLI берёт профиль из `[cli].profile` (ссылка на `[agent.<name>]`, там же `model`).
+Аргументы: токены вида `key=value` — это OmegaConf-override'ы конфига, всё
+остальное склеивается в `query`. Пустой `query` → REPL, заданный → single-shot.
 
 ```bash
 # Single-shot (-T отключает TTY)
-docker compose run --rm -T cli-agent --cli.agent.query "Привет"
+docker compose run --rm -T cli-agent "Привет"
+
+# Single-shot с override модели/профиля на лету (key=value)
+docker compose run --rm -T cli-agent cli.profile.model=qwen3:0.6b "Привет"
 
 # REPL
 docker compose run --rm cli-agent
@@ -216,18 +242,25 @@ docker compose run --rm cli-agent
 
 ### KB CLI (миграции / ingest / download)
 
+Отдельные сервисы под профилем `kb` (см. docker-compose.yml). Каждый читает
+свою секцию из `config.toml`; запуск одноразовый через `run --rm`. Доп. ключи
+можно переопределить OmegaConf-токенами `key=value` в конце команды.
+
 ```bash
-# Применить миграции и создать HNSW-индекс
-docker compose run --rm --entrypoint python cli-agent -m boba.tool.kb.cli.kb_bootstrap
+# [cli.kb.bootstrap] — миграции + HNSW-индекс
+docker compose run --rm kb-bootstrap
 
-# Индексировать KbDoc-папку (/app/local/docs → коллекция kb_kbdoc)
-docker compose run --rm --entrypoint python cli-agent -m boba.tool.kb.cli.confluence_doc
+# [cli.kb.confluence_doc.ingest] — индексация md-файлов (/app/local/docs)
+docker compose run --rm kb-confluence-doc-ingest
 
-# Скачать Confluence на ФС (/app/local/downloads)
-docker compose run --rm --entrypoint python cli-agent -m boba.tool.kb.cli.confluence.download --page-ids 950276,950278
+# [cli.kb.confluence.download] — скачать Confluence на ФС (/app/local/downloads)
+docker compose run --rm kb-confluence-download
 
-# Индексировать скачанное в kb_confluence
-docker compose run --rm --entrypoint python cli-agent -m boba.tool.kb.cli.confluence.ingest
+# [cli.kb.confluence.ingest] — индексация страниц Confluence по HTTP
+docker compose run --rm kb-confluence-ingest
+
+# [cli.kb.search.render] — рендер SQL поискового запроса (без LLM)
+docker compose run --rm kb-search-render
 ```
 
 ## Tool-плагины
@@ -236,24 +269,35 @@ docker compose run --rm --entrypoint python cli-agent -m boba.tool.kb.cli.conflu
 
 | `[tool.<name>]` | Пакет | Tools |
 |---|---|---|
+| `chart` | `boba-tool-chart` | `visualize` — интерактивный Plotly-график из figure-spec |
 | `doc`   | `boba-tool-doc`   | `read_document`, `read_pages`, `document_outline`, `search_document` — парсинг PDF/DOCX/XLSX/картинок в текст (liteparse), поиск с координатами; OCR опц. (`ocr_enabled`, см. шаг 2b) |
-| `files` | `boba-tool-files` | `cat`, `ls`, `grep`, `stat`, `tree`, `append`, `read_bytes`, `unzip` (+ опц. `cd`, `cp`, `edit`, `mkdir`, `mv`, `pwd`, `rm`, `touch`, `write`) |
-| `kb`    | `boba-tool-kb`    | `kb_search_hybrid`/`vector`/`fts`, `confluence_search_cql`, `confluence_list_spaces`, `confluence_ingest_{spaces,pages,cql}`, `confluence_download` (поверх postgres+pgvector) |
+| `files` | `boba-tool-files` | `cat`, `read_bytes`, `grep`, `ls`, `tree`, `unzip` |
+| `kb`    | `boba-tool-kb`    | `kb_vector_search`, `kb_fts_search`, `confluence_search_cql`, `confluence_list_spaces`, `confluence_fetch_page`, `confluence_ingest_{spaces,pages}` (поверх postgres+pgvector) |
 | `pg`    | `boba-tool-postgres` | `query`, `list_tables`, `describe_table`, `list_targets` — ad-hoc read-only SQL |
 | `shell` | `boba-tool-shell` | `bash_local`, `bash_sandbox` (через bubblewrap) |
 | `web`   | `boba-tool-web`   | `web_fetch`, `web_download` — HTTP с hostname-whitelist'ом |
 
 ## Профили подключений
 
-- `[postgres.<name>]` — named postgres-профили. Использование:
-  - KB-tools/CLI: `[kb.storage].profile = "<name>"` (резолвится через
-    `defaults_from=("kb.storage", "postgres.{kb.storage:profile}", "embedding")`).
-  - `tool.pg`: `[tool.pg].profiles = ["<name>", ...]` — LLM указывает имя в `target=`.
-- `[web.<name>]` (hostname + auth) — `[tool.web].profiles = ["<name>", ...]`;
-  tool автоматически матчит по hostname URL'а.
+Переиспользуемые блоки объявляются один раз и подключаются OmegaConf-ссылкой
+`${<section>.<name>}` (резолв при загрузке, см. `boba-settings`):
 
-Переключить целевой postgres-профиль для KB без правки TOML:
-`BOBA_KB__STORAGE__PROFILE=replica`.
+- `[openai.<name>]` — транспорт LLM-провайдера (base_url/api_key/...). Профиль
+  агента ссылается так: `[agent.default].openai = "${openai.openrouter}"`,
+  а имя модели — отдельно в `[agent.<name>].model`.
+- `[postgres.<name>]` — named postgres-профили:
+  - KB-tools/CLI: `[tool.kb].connection = "${postgres.main}"` (+ `tables = "${kb.tables}"`,
+    `embedding = "${embedding.e5}"`).
+  - `tool.pg`: `[tool.pg].profiles = { main = "${postgres.main}" }` — LLM указывает
+    имя ключа в `target=`.
+- `[embedding.<name>]` — профили embedding-модели (e5/bge), подключаются в KB
+  через `embedding = "${embedding.<name>}"`.
+- `[web.<name>]` — HTTP-профили (timeout/ssl/retry/auth). `tool.web` матчит по
+  hostname через `[tool.web.profiles]`: `"github.com" = "${web.public}"`.
+
+Переопределить любой ключ без правки TOML — CLI-override `key=value`
+(напр. `cli.profile.model=...`) или отдельный secrets-overlay через
+`BOBA_SECRETS_PATH` (merge поверх config.toml).
 
 ## Команды
 
@@ -263,6 +307,6 @@ docker compose up -d chainlit                                     # daemon UI
 docker compose logs -f chainlit                                   # логи UI
 docker compose run --rm -T cli-agent ARGS...                      # одиночный CLI
 docker compose run --rm cli-agent ARGS...                         # CLI REPL
-docker compose run --rm --entrypoint python cli-agent -m MODULE   # KB-CLI / других modules
+docker compose run --rm kb-bootstrap                              # KB-CLI (профиль kb): bootstrap/ingest/...
 docker compose down                                               # остановить daemon
 ```

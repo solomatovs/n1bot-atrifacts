@@ -11,6 +11,9 @@ local/*/*
 !local/*.example/
 !local/*.example/**
 
+# Сгенерированный Makefile'ом .env с BOBA_TAG (docker compose interpolation).
+.env
+
 # Экспорт образов (большие файлы — не коммитим).
 images/
 

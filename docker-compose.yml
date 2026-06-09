@@ -1,16 +1,14 @@
 x-boba-base: &boba-base
-  # Рантайм всегда гоняет последний собранный образ; версионный тег
-  # boba:tools-X.Y.Z навешивается дополнительно через build.tags (см. Makefile).
-  image: boba:latest
+  image: boba:${BOBA_TAG:-latest}
   build:
     context: ..
     dockerfile: boba-artifacts/Dockerfile
     tags:
-      - boba:tools-${BOBA_TAG:-0.0.1}
+      - boba:latest
   env_file:
     - ./local/.env
   volumes:
-    # Bind mount всей папки local/ — единая deployment-песочница.
+    # Bind mount всей папки local/ — единая песочница
     # Сохраняется на хосте:
     #   /app/local/config.toml   — настройки
     #   /app/local/prompts/      — system-prompts
@@ -27,16 +25,13 @@ services:
   chainlit:
     <<: *boba-base
     hostname: boba-chainlit
-    entrypoint: ["boba-chainlit-agent"]
+    entrypoint: ["boba-chainlit"]
     expose:
       - "8501"
     ports:
       - 127.0.0.1:8501:8501
     healthcheck:
-      # Chainlit отдаёт /health под своим url_prefix (CHAINLIT_ROOT_PATH).
-      # Префикс берём из той же настройки, что и приложение; пусто = корень.
-      # Если url_prefix задан только в config.toml — продублируй его в .env.
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8501${BOBA_CHAINLIT__URL_PREFIX:-}/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8501${CHAINLIT_URL_PREFIX:-/boba}/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -47,12 +42,45 @@ services:
           - boba-chainlit
     restart: unless-stopped
 
-  # Ad-hoc CLI: ``docker compose run --rm -T cli-agent --cli.agent.model X --cli.agent.query "..."``.
-  # Без --cli.agent.query запускается REPL — :q/exit/quit для выхода, /clear для сброса.
+  # cli agent
   cli-agent:
     <<: *boba-base
     profiles: ["cli"]
-    entrypoint: ["boba-cli-agent"]
+    entrypoint: ["boba-cli"]
+
+  # [cli.kb.bootstrap] — накатывает миграции (схема таблиц)
+  kb-bootstrap:
+    <<: *boba-base
+    profiles: ["kb"]
+    entrypoint: ["python3", "-m", "boba.tool.kb.cli.kb_bootstrap"]
+
+
+  # [cli.kb.confluence.ingest] — индексация страниц Confluence по HTTP в KB
+  kb-confluence-ingest:
+    <<: *boba-base
+    profiles: ["kb"]
+    entrypoint: ["python3", "-m", "boba.tool.kb.cli.confluence.ingest"]
+
+
+  # [cli.kb.confluence_doc.ingest] — индексация заранее подготовленных md-файлов
+  kb-confluence-doc-ingest:
+    <<: *boba-base
+    profiles: ["kb"]
+    entrypoint: ["python3", "-m", "boba.tool.kb.cli.confluence_doc"]
+
+
+  # [cli.kb.confluence.download] — скачивание страниц Confluence на ФС
+  kb-confluence-download:
+    <<: *boba-base
+    profiles: ["kb"]
+    entrypoint: ["python3", "-m", "boba.tool.kb.cli.confluence.download"]
+
+
+  # [cli.kb.search.render] — рендер SQL поискового запроса к KB (без LLM)
+  kb-search-render:
+    <<: *boba-base
+    profiles: ["kb"]
+    entrypoint: ["python3", "-m", "boba.tool.kb.cli.search"]
 
 networks:
   default:
