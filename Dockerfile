@@ -160,6 +160,15 @@ COPY boba-artifacts/tessdata/ /opt/tessdata/
 ENV TESSDATA_PREFIX=/opt/tessdata \
     TESSDATA_PATH=/opt/tessdata
 
+# liteparse 2.0.x: ensure_traineddata НЕ разбивает ocr_language по '+' и для
+# "rus+eng" ищет один файл rus+eng.traineddata, не находит -> качает его с
+# github -> HTTP 404 (offline тем более). Сам tesseract api.init("rus+eng")
+# при этом корректно бьёт строку по '+' и грузит rus/eng по отдельности.
+# Обходим: создаём симлинк-маркер на склеенное имя, чтобы проверка существования
+# прошла и скачивание не запускалось. Линкуем оба порядка (rus+eng / eng+rus).
+RUN ln -sf eng.traineddata /opt/tessdata/rus+eng.traineddata && \
+    ln -sf rus.traineddata /opt/tessdata/eng+rus.traineddata
+
 WORKDIR /app
 EXPOSE 8501
 
