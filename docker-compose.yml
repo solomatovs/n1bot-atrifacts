@@ -1,24 +1,15 @@
 x-boba-base: &boba-base
-  image: boba:${BOBA_TAG:-latest}
+  image: boba:${BOBA_TAG}
   build:
-    context: ..
-    dockerfile: boba-artifacts/Dockerfile
+    context: .
+    dockerfile: Dockerfile
+    additional_contexts:
+      boba: ${SRC_DIR}
     tags:
       - boba:latest
   env_file:
     - ./local/.env
   volumes:
-    # Bind mount всей папки local/ — единая песочница
-    # Сохраняется на хосте:
-    #   /app/local/config.toml   — настройки
-    #   /app/local/prompts/      — system-prompts
-    #   /app/local/workspaces/   — workspaces сессий (chainlit UUID / cli user/system)
-    #   /app/local/chainlit/     — chainlit runtime-state
-    #   /app/local/logs/         — логи сервисов
-    #   /app/local/cache/        — runtime-кэши (fastembed ONNX-веса,
-    #                              переносимые offline на другой хост)
-    #   /app/local/docs/         — KbDoc-input для confluence_doc
-    #   /app/local/downloads/    — output confluence.download / input для confluence.ingest
     - ./local:/app/local
 
 services:
@@ -31,7 +22,7 @@ services:
     ports:
       - 127.0.0.1:8501:8501
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8501${CHAINLIT_URL_PREFIX:-/boba}/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8501${CHAINLIT_URL_PREFIX}/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

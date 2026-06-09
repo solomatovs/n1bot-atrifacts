@@ -1,0 +1,9 @@
+.git
+.gitignore
+.vscode
+images
+
+local/*
+!local/pip.conf*
+!local/apt-sources.list*
+!local/ca-chain.crt*

@@ -52,11 +52,6 @@ connect_timeout_sec = 10.0
 model = "intfloat/multilingual-e5-large"
 cache_dir = "/app/local/cache/fastembed"
 
-[embedding.bge]
-model = "BAAI/bge-m3"
-cache_dir = "/app/local/cache/fastembed"
-
-
 ## web-профили — набор настроек для HTTP-клиента (таймаут/SSL/ретраи/авторизация и т.д.).
 ## например public профиль не имеет авторизации и с отключённой проверкой SSL подойдёт для любых публичных web request'ов
 [web.public]

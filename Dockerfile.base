@@ -6,27 +6,29 @@ ARG GLIBC_VERSION=2.28
 ARG GCC_VERSION=8.5.0
 ARG PYTHON_VERSION=3.11.12
 
-# apt: доверять неподписанным репо (закрытый контур).
+# apt: доверять неподписанным репо (закрытый контур)
 RUN printf '%s\n' \
       'APT::Get::AllowUnauthenticated "true";' \
       'Acquire::AllowInsecureRepositories "true";' \
       'Acquire::AllowDowngradeToInsecureRepositories "true";' \
       > /etc/apt/apt.conf.d/99insecure
 
-# опц. override sources.list (пусто = дефолт rootfs)
-COPY local/apt-sources.list /tmp/sources.list.custom
-RUN if grep -qvE '^[[:space:]]*(#|$)' /tmp/sources.list.custom 2>/dev/null; then \
-      cp /tmp/sources.list.custom /etc/apt/sources.list; \
-    fi && rm /tmp/sources.list.custom
+# override sources.list
+COPY local/apt-sources.list* /tmp/aptsrc/
+RUN if [ -f /tmp/aptsrc/apt-sources.list ] && \
+       grep -qvE '^[[:space:]]*(#|$)' /tmp/aptsrc/apt-sources.list; then \
+      cp /tmp/aptsrc/apt-sources.list /etc/apt/sources.list; \
+    fi && rm -rf /tmp/aptsrc
 
-# опц. корпоративные CA (без BEGIN CERTIFICATE = no-op)
-COPY local/ca-chain.crt /tmp/ca-chain.crt
-RUN if grep -qE '^-----BEGIN CERTIFICATE-----' /tmp/ca-chain.crt; then \
-      cp /tmp/ca-chain.crt /usr/local/share/ca-certificates/ca-chain.crt && \
+# корпоративные CA
+COPY local/ca-chain.crt* /tmp/cacrt/
+RUN if [ -f /tmp/cacrt/ca-chain.crt ] && \
+       grep -qE '^-----BEGIN CERTIFICATE-----' /tmp/cacrt/ca-chain.crt; then \
+      cp /tmp/cacrt/ca-chain.crt /usr/local/share/ca-certificates/ca-chain.crt && \
       update-ca-certificates; \
-    fi && rm /tmp/ca-chain.crt
+    fi && rm -rf /tmp/cacrt
 
-# build-toolchain + -dev либы для сборки glibc/gcc/python
+# build-toolchain
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential gawk bison xz-utils \
@@ -35,7 +37,7 @@ RUN apt-get update && \
         libbz2-dev liblzma-dev curl \
     && rm -rf /var/lib/apt/lists/*
 
-# ---------- glibc 2.28 ----------
+# glibc 2.28
 COPY glibc-src/glibc-${GLIBC_VERSION}.tar.xz /tmp/glibc.tar.xz
 RUN cd /tmp && \
     tar -xf glibc.tar.xz && \
@@ -54,7 +56,7 @@ RUN mkdir -p /opt/glibc-2.28/etc && \
 
 RUN ln -sf /opt/glibc-2.28/lib/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2
 
-# ---------- GCC 8 (libstdc++) ----------
+# GCC 8 (libstdc++)
 COPY gcc-src/ /tmp/gcc-src/
 RUN cd /tmp && \
     tar -xf gcc-src/gcc-${GCC_VERSION}.tar.xz && \
@@ -74,7 +76,7 @@ RUN cd /tmp && \
     make -j"$(nproc)" && make install-strip && \
     rm -rf /tmp/gcc* /tmp/gcc-src
 
-# ---------- Python 3.11 ----------
+# Python 3.11
 COPY python-src/Python-${PYTHON_VERSION}.tar.xz /tmp/Python.tar.xz
 RUN cd /tmp && \
     tar -xf Python.tar.xz && \
@@ -86,32 +88,30 @@ RUN cd /tmp && \
     make -j"$(nproc)" && make install && \
     rm -rf /tmp/Python*
 
-# Final stage: чистый runtime
+# чистый runtime
 FROM astra_linux_ce_2.12-rootfs:latest
 
-# apt insecure + sources.list + CA — см. builder-stage выше
+# apt insecure + sources.list + CA
 RUN printf '%s\n' \
       'APT::Get::AllowUnauthenticated "true";' \
       'Acquire::AllowInsecureRepositories "true";' \
       'Acquire::AllowDowngradeToInsecureRepositories "true";' \
       > /etc/apt/apt.conf.d/99insecure
 
-COPY local/apt-sources.list /tmp/sources.list.custom
-RUN if grep -qvE '^[[:space:]]*(#|$)' /tmp/sources.list.custom 2>/dev/null; then \
-      cp /tmp/sources.list.custom /etc/apt/sources.list; \
-    fi && rm /tmp/sources.list.custom
+COPY local/apt-sources.list* /tmp/aptsrc/
+RUN if [ -f /tmp/aptsrc/apt-sources.list ] && \
+       grep -qvE '^[[:space:]]*(#|$)' /tmp/aptsrc/apt-sources.list; then \
+      cp /tmp/aptsrc/apt-sources.list /etc/apt/sources.list; \
+    fi && rm -rf /tmp/aptsrc
 
-COPY local/ca-chain.crt /tmp/ca-chain.crt
-RUN if grep -qE '^-----BEGIN CERTIFICATE-----' /tmp/ca-chain.crt; then \
-      cp /tmp/ca-chain.crt /usr/local/share/ca-certificates/ca-chain.crt && \
+COPY local/ca-chain.crt* /tmp/cacrt/
+RUN if [ -f /tmp/cacrt/ca-chain.crt ] && \
+       grep -qE '^-----BEGIN CERTIFICATE-----' /tmp/cacrt/ca-chain.crt; then \
+      cp /tmp/cacrt/ca-chain.crt /usr/local/share/ca-certificates/ca-chain.crt && \
       update-ca-certificates; \
-    fi && rm /tmp/ca-chain.crt
+    fi && rm -rf /tmp/cacrt
 
-# Runtime-зависимости:
-#   CPython-линки: ssl/ffi/sqlite3/bz2/lzma/readline/ncurses/zlib; curl — healthcheck.
-#   liteparse shell-out'ит конвертеры: imagemagick (img→PDF), libreoffice
-#     (docx/xlsx/pptx→PDF), ghostscript (gs). tesseract+pdfium — внутри wheel.
-#   bubblewrap — boba-tool-shell bash_sandbox; git — git-PromptProvider.
+# Runtime-зависимости
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         libssl1.1 libffi6 libsqlite3-0 libbz2-1.0 \
@@ -124,16 +124,29 @@ RUN apt-get update && \
         git \
     && rm -rf /var/lib/apt/lists/*
 
-# снять Debian-запрет PDF-coder в ImageMagick (иначе img→PDF = "not authorized")
+# снять Debian-запрет PDF-coder в ImageMagick (иначе img-PDF = "not authorized")
 RUN for p in /etc/ImageMagick-6/policy.xml /etc/ImageMagick-7/policy.xml; do \
       if [ -f "$p" ]; then \
         sed -i 's#rights="none" pattern="PDF"#rights="read|write" pattern="PDF"#' "$p"; \
       fi; \
     done
 
-# CA bundle для httpx/requests/openai/pip (public + кастомные CA)
+# liteparse ждёт унифицированный CLI magick (ImageMagick 7)
+# Astra/Debian даёт IM6 только с CLI convert.
+RUN printf '%s\n' \
+      '#!/bin/sh' \
+      'case "$1" in' \
+      '  convert|identify|mogrify|composite|montage|compare|stream|conjure|import) c="$1"; shift; exec "$c" "$@";;' \
+      '  *) exec convert "$@";;' \
+      'esac' \
+      > /usr/local/bin/magick && chmod +x /usr/local/bin/magick
+
+# для разных программ свои переменные окружения CA bundle
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
-    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    PIP_CERT=/etc/ssl/certs/ca-certificates.crt \
+    CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt
 
 COPY --from=builder /opt/glibc-2.28 /opt/glibc-2.28
 RUN ln -sf /opt/glibc-2.28/lib/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2 && \
