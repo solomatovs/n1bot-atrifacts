@@ -1,0 +1,118 @@
+model_list:
+  - model_name: numarkdown-q8
+    litellm_params:
+      model: ollama_chat/hf.co/mradermacher/NuMarkdown-8B-Thinking-GGUF:Q8_0
+      api_base: http://ollama:11434
+      supports_vision: true
+
+  - model_name: numarkdown-q4
+    litellm_params:
+      model: ollama_chat/hf.co/mradermacher/NuMarkdown-8B-Thinking-GGUF:Q4_K_M
+      api_base: http://ollama:11434
+      supports_vision: true
+
+  - model_name: deepseek-coder-v2-16b
+    litellm_params:
+      model: ollama_chat/deepseek-coder-v2:16b
+      api_base: http://ollama:11434
+
+  - model_name: gemini
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+
+  - model_name: qwen3
+    litellm_params:
+      model: ollama_chat/qwen3:latest
+      api_base: http://ollama:11434
+
+  - model_name: qwen3-0.6b
+    litellm_params:
+      model: ollama_chat/qwen3:0.6b
+      api_base: http://ollama:11434
+    model_info:
+      max_input_tokens: 32000
+
+  - model_name: qwen3-235b
+    litellm_params:
+      model: ollama_chat/qwen3:235b-a22b
+      api_base: http://ollama:11434
+
+  - model_name: qwen3.5-35b
+    litellm_params:
+      model: ollama_chat/qwen3.5:35b-a3b
+      api_base: http://ollama:11434
+
+  - model_name: qwen3.5-122b
+    litellm_params:
+      model: ollama_chat/qwen3.5:122b-a10b
+      api_base: http://ollama:11434
+
+  - model_name: qwen3-embedding-0.6b
+    litellm_params:
+      model: openai/qwen3-embedding:0.6b
+      api_base: http://ollama:11434/v1
+      api_key: "unused"
+
+  - model_name: qwen3-embedding-4b
+    litellm_params:
+      model: openai/qwen3-embedding:4b
+      api_base: http://ollama:11434/v1
+      api_key: "unused"
+
+  - model_name: qwen3-embedding-8b
+    litellm_params:
+      model: openai/qwen3-embedding:8b
+      api_base: http://ollama:11434/v1
+      api_key: "unused"
+
+  - model_name: e5-large-instruct
+    litellm_params:
+      model: openai/jeffh/intfloat-multilingual-e5-large-instruct:f32
+      api_base: http://ollama:11434/v1
+      api_key: "unused"
+
+  - model_name: nomic-embed-text
+    litellm_params:
+      model: openai/nomic-embed-text:latest
+      api_base: http://ollama:11434/v1
+      api_key: "unused"
+
+  - model_name: qwen2.5-coder-1.5b
+    litellm_params:
+      model: ollama_chat/qwen2.5-coder:1.5b-base
+      api_base: http://ollama:11434
+
+  - model_name: llama3.1-8b
+    litellm_params:
+      model: ollama_chat/llama3.1:8b
+      api_base: http://ollama:11434
+
+  - model_name: markdownCreator-unsloth
+    litellm_params:
+      model: ollama_chat/llama3.1:8b
+      api_base: http://ollama:11434
+
+# Настройки сервера
+litellm_settings:
+  # Глобальная настройка для отбрасывания неподдерживаемых параметров
+  drop_params: true
+  
+  # Порт для API
+  port: 4000
+  
+  # Логирование
+  set_verbose: true
+  
+  # CORS для веб-приложений
+  cors: true
+  # Специально для vision моделей
+  supports_vision: true
+  enable_multimodal: true
+
+router_settings:
+  enable_pre_call_checks: true
+
+# Дополнительные настройки
+general_settings:
+  # Таймауты
+  request_timeout: 600

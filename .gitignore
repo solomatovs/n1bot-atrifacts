@@ -1,18 +1,9 @@
-local/*
-!local/*.example
-!local/.gitkeep
-!local/README.md
-!local/*/
-local/*/*
-!local/*/.gitkeep
-!local/*.example/
-!local/*.example/**
+# fastembed-веса (make fastembed) — большой артефакт, в git не храним
+/fastembed/
 
-.env
-
-images/
-
-.chainlit/
-.files/
-import/
-local/cache
+/apt-sources.list
+/ca-chain.crt
+/pip.conf
+/uv.toml
+/litellm-config.yaml
+/nginx-boba.conf
