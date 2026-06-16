@@ -28,7 +28,7 @@ boba-artifacts/
 ├── gcc-src/, glibc-src/, python-src/   # для Dockerfile.base
 ├── Dockerfile             # runtime (FROM boba-base)
 ├── Dockerfile.base        # glibc+gcc+python из astra_linux_ce
-└── docker-compose.yml     # chainlit (daemon), cli-agent (profile=cli)
+└── docker-compose.yml     # chainlit (daemon), chainlit2 (profile=chainlit2), cli-agent (profile=cli)
 ```
 
 `docker-compose` монтирует `boba-artifacts/local/` как `/app/local` в контейнер.
@@ -91,6 +91,7 @@ docker run --rm \
         /tmp/packages/tools/boba-tool-web \
         /tmp/packages/agents/boba-cli \
         /tmp/packages/agents/boba-chainlit \
+        /tmp/packages/agents/boba-chainlit2 \
         pip setuptools wheel \
         -w wheels/
     chown -R "$HOST_UID:$HOST_GID" wheels
@@ -138,6 +139,7 @@ docker run --rm \
         /tmp/packages/tools/boba-tool-web \
         /tmp/packages/agents/boba-cli \
         /tmp/packages/agents/boba-chainlit \
+        /tmp/packages/agents/boba-chainlit2 \
         pip setuptools wheel \
         -w wheels/
     chown -R "$HOST_UID:$HOST_GID" wheels
@@ -149,6 +151,15 @@ docker run --rm \
 > вместе с остальным; в закрытом — должна быть в вашем индексе/зеркале.
 > Требует glibc ≥ 2.28 (base даёт ровно 2.28 — после сборки проверьте
 > `docker run --rm boba:latest python3 -c "import liteparse"`).
+
+> `boba-chainlit2` тянет `gssapi` и `krb5` (kerberos SSO/делегирование). На
+> Linux у них **нет готовых wheel** — `pip wheel` собирает их из sdist прямо в
+> `boba-base`, поэтому base включает `build-essential` + `libkrb5-dev` (+ runtime
+> `libgssapi-krb5-2`/`libkrb5-3`). В закрытом контуре собранные wheel либо
+> окажутся в `wheels/` после `make wheels`, либо должны лежать в вашем зеркале.
+> После сборки проверьте: `docker run --rm boba:latest python3 -c "import gssapi, krb5"`.
+> Для работы SSO в рантайме нужны `local/krb5.keytab` (с вашим SPN) и
+> `local/krb5.conf` — `docker-compose` монтирует их в сервис `chainlit2`.
 
 ## 2b. Tesseract-модели для OCR (для `boba-tool-doc`)
 
